@@ -1,0 +1,7 @@
+tests/
+tsconfig*.json
+build/
+dist/
+node_modules/
+*.tsbuildinfo
+.smoke/
