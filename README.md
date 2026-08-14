@@ -31,8 +31,10 @@ This adds the package to the profile manifest and runs its pnpm install; the pro
       name: '@deepseek-ai/dsh-cognitive-pipeline'
       config:
         root: !!js dshHomePath('cognitive-pipeline')
-        # Optional LLM assists; omit (or leave unreachable) for deterministic mode.
-        provider: deepseek
+        # Reuses the harness's own LLM route and credentials — no separate API
+        # key. Omit provider/model (or leave the route unreachable) for
+        # deterministic mode. See examples/cordis.patch.yml.
+        provider: deepseek-official
         model: deepseek-v4-flash
 ```
 
@@ -41,6 +43,8 @@ Alternatively add it to any Cordis composition:
 ```sh
 pnpm add @deepseek-ai/dsh-cognitive-pipeline
 ```
+
+A ready-to-use patch snippet is in [`examples/cordis.patch.yml`](examples/cordis.patch.yml). The LLM route reuses the harness's own credentials (e.g. `DEEPSEEK_API_KEY`); nothing extra is configured on the plugin side.
 
 ### From source (development)
 

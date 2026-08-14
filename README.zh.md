@@ -31,8 +31,9 @@ dsh plugin --profile web add @deepseek-ai/dsh-cognitive-pipeline
       name: '@deepseek-ai/dsh-cognitive-pipeline'
       config:
         root: !!js dshHomePath('cognitive-pipeline')
-        # 可选 LLM 辅助；省略（或不可达）时为确定性模式。
-        provider: deepseek
+        # 复用 DSH 自身的 LLM 路由与凭据——无需单独配置 API key。
+        # 省略 provider/model（或路由不可达）时为确定性模式。见 examples/cordis.patch.yml。
+        provider: deepseek-official
         model: deepseek-v4-flash
 ```
 
@@ -41,6 +42,8 @@ dsh plugin --profile web add @deepseek-ai/dsh-cognitive-pipeline
 ```sh
 pnpm add @deepseek-ai/dsh-cognitive-pipeline
 ```
+
+可直接使用的 patch 片段见 [`examples/cordis.patch.yml`](examples/cordis.patch.yml)。LLM 路由复用 DSH 自身的凭据（如 `DEEPSEEK_API_KEY`），插件侧无需额外配置。
 
 ### 源码方式（开发）
 

@@ -1,0 +1,11 @@
+# Copy into a dsh profile's patch layer (<dshHome>/profiles/<name>/cordis.patch.yml)
+# to enable the cognitive pipeline. Reuses the harness's own LLM route and
+# credentials (e.g. DEEPSEEK_API_KEY in data/.credentials.yaml) — no separate
+# API key is needed.
+- insert:
+    - id: cognitive-pipeline
+      name: '@deepseek-ai/dsh-cognitive-pipeline'
+      config:
+        root: !!js dshHomePath('cognitive-pipeline')
+        provider: deepseek-official
+        model: deepseek-v4-flash
