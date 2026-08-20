@@ -7,7 +7,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm';
-import type { Experience, OutcomeUtility, SarTriplet } from './types.ts';
+import type { AccumulationDecision, Experience, OutcomeUtility, SarTriplet } from './types.ts';
 /** Explicit provider/model route; both or neither must be set. */
 export interface CognitiveLlmRoute {
     readonly provider?: string | undefined;
@@ -157,5 +157,28 @@ export declare function reconstructTaxonomy(ctx: Context, route: CognitiveLlmRou
     evidenceIds: readonly string[];
     meanUtility: OutcomeUtility;
 }[], summaryShort: string, options: CallOptions): Promise<ReconstructOutput>;
+/** Deterministic template-5 fallback: reject accumulation (no route → no gate). */
+export declare function accumulationFallback(): AccumulationDecision;
+/**
+ * Template 5: the accumulation gate. The LLM route judges whether a completed
+ * turn is worth becoming an experience and extracts the SAR triplet when it is.
+ * Without an explicit route the gate deterministically rejects — automatic
+ * accumulation never runs unjudged.
+ * @param ctx - plugin context for the LLM call.
+ * @param route - explicit model route.
+ * @param episode - the completed turn's situation/action/outcome material.
+ * @param similar - retrieved history hits for the novelty judgment.
+ * @param options - call context (session/signal/maxTokens).
+ * @returns the accumulation decision.
+ */
+export declare function evaluateAccumulation(ctx: Context, route: CognitiveLlmRoute, episode: {
+    situation: string;
+    action: string;
+    outcome: string;
+}, similar: readonly {
+    expId: string;
+    text: string;
+    similarity: number;
+}[], options: CallOptions): Promise<AccumulationDecision>;
 export {};
 //# sourceMappingURL=llm.d.ts.map

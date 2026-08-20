@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-cognitive-pipeline
+﻿# @deepseek-ai/dsh-cognitive-pipeline
 
 Prediction-error-driven dynamic cognition (DCA-PED) as a DeepSeek Harness plugin. It gives the agent an evolving experience memory: experiences are encoded as **Situation–Action–Result (SAR)** triplets, retrieved by action similarity, predicted with a **five-layer calibrated confidence interval**, corrected by **real feedback**, and periodically **re-clustered in utility space** — a rebuild only wins when a sandbox backtest proves a ≥15% error cut.
 
@@ -57,13 +57,14 @@ cp -r src <dsh>/packages/cognition/cognitive-pipeline/src
 
 ## Usage
 
-The model gets five tools:
+The model gets six tools:
 
 - `remember_experience` — encode a raw experience into SAR memory.
 - `predict_outcome` — calibrated prediction with an 80% interval; returns a `prediction_id`.
 - `report_outcome` — feed the actual outcome back (optional `outcome_quality` 0–10).
 - `rebuild_taxonomy` — run the cold loop (`scope: local | global`).
 - `inspect_memory` — read experiences, clusters, calibration buckets, taxonomy summary.
+- `simulate_experience` — generate a retrieval-only candidate when real testing is costly or impossible.
 
 The plugin also provides the `ctx.cognitivePipeline` service and the dynamic `cognition:taxonomy` system-prompt section. See [`src/service.ts`](src/service.ts) for the exact service API.
 
@@ -96,7 +97,7 @@ All fields optional; engine defaults follow the design documents.
 | `validationRatio` | `0.2` | Validation slice of the sampled set |
 | `clusterMergeCosine` | `0.4` | Agglomerative merge cosine |
 | `clusterMatchCosine` | `0.3` | Cluster-membership cosine |
-| `emergencyErrorThreshold` | `0.8` | Feedback error triggering a local repair |
+| `emergencyErrorThreshold` | `0.8` | Feedback error triggering a local repair |\n| `successReferenceThreshold` | `0.4` | Situation-cosine threshold for a success-cluster reference |\n| `coverageThreshold` | `0.3` | Situation-centroid cosine below which the taxonomy is uncovered |\n| `retrievalFailureMargin` | `0.1` | Routing margin below which a prediction is SAR-ized as a retrieval failure |\n| `minValidationCount` | `3` | Minimum labeled validation samples before a rebuild may be accepted |\n| `reconstructRetries` | `2` | Extra reconstruct draws when one stochastic LLM sample yields nothing verified |\n| `autoAccumulate` | `false` | Automatically accumulate completed turns judged worth it by the LLM route |
 
 ## Compatibility
 

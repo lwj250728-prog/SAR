@@ -15,7 +15,7 @@ import { HotEngine } from './hot-engine.ts';
 import type { HotEngineConfig } from './hot-engine.ts';
 import type { CognitiveLlmRoute } from './llm.ts';
 import { CognitiveStore } from './store.ts';
-import type { CalibrationBucket, Cluster, FeedbackInput, FeedbackResult, InspectResult, OutcomeUtility, PredictInput, PredictResult, RebuildResult, RememberInput, SarTriplet, TaxonomyState, TempStrategy } from './types.ts';
+import type { CalibrationBucket, Cluster, FeedbackInput, FeedbackResult, InspectResult, OutcomeUtility, PredictInput, PredictResult, RebuildResult, RememberInput, SarTriplet, SimulateInput, TaxonomyState, TempStrategy, TurnEpisode } from './types.ts';
 /** Plugin configuration (all fields optional; engine defaults apply). */
 export interface CognitivePipelineConfig {
     /** Store directory; default `<dshHome>/cognitive-pipeline`. */
@@ -46,12 +46,31 @@ export interface CognitivePipelineConfig {
     shrinkageAlpha?: number;
     /** Minimum 80%-interval width (default 0.2). */
     minConfidenceIntervalWidth?: number;
+    /** Situation-cosine threshold for matching a success-cluster reference (default 0.4). */
+    successReferenceThreshold?: number;
+    /** Situation-centroid cosine below which the taxonomy is considered uncovered (default 0.3). */
+    coverageThreshold?: number;
+    /** Routing margin below which a known-path prediction is SAR-ized as a retrieval failure (default 0.1). */
+    retrievalFailureMargin?: number;
     /** Cold-loop time-decay lambda per day (default 0.01). */
     decayLambda?: number;
     /** Cold-loop minimum decay weight (default 0.1). */
     minDecayWeight?: number;
     /** Cold-loop prediction-error inclusion threshold (default 0.3). */
     predictionErrorThreshold?: number;
+    /** Cold-loop utility-score threshold for including success experiences (default 3). */
+    successUtilityThreshold?: number;
+    /** Minimum labeled validation samples before a rebuild may be accepted (default 3). */
+    minValidationCount?: number;
+    /** Evidence weight at/above which one feedback fast-tracks a simulation to provisional verified (default 0.8). */
+    simulationFastTrackThreshold?: number;
+    /** Cumulative evidence score needed for permanent verified (default 2). */
+    simulationPermanentThreshold?: number;
+    /** Fallback TTL in ms after which an unverified simulation expires (default 30 days). */
+    simulationTtlMs?: number;
+    /** Automatically accumulate completed turns as experiences when the LLM
+     * route judges them worth it (default false; pure chat never reaches the gate). */
+    autoAccumulate?: boolean;
     /** Cold-loop max sample ratio of the population (default 0.15). */
     maxSampleRatio?: number;
     /** Evidence hard-constraint minimum count (default 3). */
@@ -62,6 +81,8 @@ export interface CognitivePipelineConfig {
     sandboxImprovement?: number;
     /** Validation slice ratio of the sampled set (default 0.2). */
     validationRatio?: number;
+    /** Extra reconstruct draws when one stochastic LLM sample yields nothing verified (default 2). */
+    reconstructRetries?: number;
     /** Agglomerative merge cosine threshold (default 0.4). */
     clusterMergeCosine?: number;
     /** Cluster-membership cosine threshold (default 0.3). */
@@ -79,6 +100,11 @@ export interface ResolvedCognitivePipelineConfig {
     readonly tempStrategyHitThreshold: number;
     readonly tempStrategyPositiveRatio: number;
     readonly emergencyErrorThreshold: number;
+    readonly simulationFastTrackThreshold: number;
+    readonly simulationPermanentThreshold: number;
+    readonly simulationTtlMs: number;
+    /** Whether completed turns are automatically accumulated via the LLM gate. */
+    readonly autoAccumulate: boolean;
 }
 /** Config schema for Loader validation and defaulting. */
 export declare const Config: z<CognitivePipelineConfig>;
@@ -123,12 +149,59 @@ export declare class CognitivePipelineService extends Service {
         expId: string;
         sar: SarTriplet;
     }>;
+    /**
+     * Generate a simulated experience via the LLM route: a retrieval-only,
+     * unverified candidate for "if I take this action in this situation, what
+     * would happen". It shapes no cluster until real feedback verifies it.
+     * @param input - the hypothetical situation and proposed action.
+     * @param call - optional session/signal context.
+     * @returns the new simulated experience id and its SAR triplet.
+     */
+    simulate(input: SimulateInput, call?: PipelineCallContext): Promise<{
+        expId: string;
+        sar: SarTriplet;
+    }>;
     /** Hot-loop prediction.
      * @param input - the situation/action to predict.
      * @param call - optional session/signal context.
      * @returns the calibrated prediction result.
      */
     predict(input: PredictInput, call?: PipelineCallContext): Promise<PredictResult>;
+    /**
+     * Directly record a pipeline-own (meta) observation without LLM extraction —
+     * the structured path for automatic retrieval-failure SAR-ization. Meta
+     * experiences with a non-neutral utility join the cold-loop sample, so the
+     * pipeline can cluster and learn from its own failure modes.
+     * @param input - the structured SAR fields for the observation.
+     * @returns the new experience id.
+     */
+    rememberMeta(input: {
+        situation: string;
+        action: string;
+        outcome: string;
+        utility: OutcomeUtility;
+    }): string;
+    /**
+     * SAR-ize one detected retrieval-routing failure: when the taxonomy routed a
+     * known-path query to a cluster with a thin margin (best-minus-second-best
+     * cosine below `retrievalFailureMargin`), record a meta experience so the
+     * calibration layer can reference "this action had an unreliable routing"
+     * and the cold loop can cluster the failure pattern. Deduplicated by action
+     * similarity so repeated queries do not spam the store.
+     * @param input - the query that produced the prediction.
+     * @param result - the prediction result carrying the taxonomy context.
+     */
+    private maybeSynthesizeRetrievalFailure;
+    /**
+     * Automatic accumulation: judge one completed turn through the LLM gate and
+     * write it as an experience when the route deems it worth it. A deterministic
+     * pre-filter (pure chat: no tool calls, no failure, short output) never
+     * reaches the per-turn LLM call. Without an explicit route the gate rejects.
+     * @param episode - the reconstructed turn material.
+     * @param call - optional session/signal context.
+     * @returns the new experience id when accumulated, or null.
+     */
+    accumulateTurn(episode: TurnEpisode, call?: PipelineCallContext): Promise<string | null>;
     /** Feedback loop: resolve a prediction, update calibration and scratchpad.
      * @param input - the prediction id and actual outcome.
      * @param call - optional session/signal context.

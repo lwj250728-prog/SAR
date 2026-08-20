@@ -18,6 +18,13 @@ export interface HotEngineConfig {
     readonly oodSiThreshold: number;
     readonly shrinkageAlpha: number;
     readonly minConfidenceIntervalWidth: number;
+    /** Situation-centroid cosine at/above which a success cluster is returned as a reference strategy (default 0.4). */
+    readonly successReferenceThreshold: number;
+    /** Situation-centroid cosine below which the taxonomy is considered uncovered (default 0.3). */
+    readonly coverageThreshold: number;
+    /** Routing margin (best-minus-second-best cluster cosine) below which a
+     * known-path prediction is treated as a retrieval failure and SAR-ized (default 0.1). */
+    readonly retrievalFailureMargin: number;
     readonly tempStrategyTtlMs: number;
     readonly tempStrategyMatchThreshold: number;
 }
@@ -58,6 +65,27 @@ export declare class HotEngine {
      * @returns the calibrated prediction result.
      */
     predict(input: PredictInput, sessionId?: GenerateOptions['sessionId'], signal?: AbortSignal): Promise<PredictResult>;
+    /**
+     * Consult the taxonomy during retrieval: match the query situation against
+     * every cluster's situation centroid (any polarity), report the routed
+     * region, the routing confidence (best-minus-second-best margin), and
+     * whether SAR has coverage there. This is the structural layer of the
+     * pipeline's self-knowledge — retrieval knows what SAR contains before it
+     * scans the experience store.
+     * @param situation - the query situation text.
+     * @returns the taxonomy context for this query.
+     */
+    private taxonomyContext;
+    /** Compact retrieval-advice line appended to the advice text. */
+    private taxonomyAdviceLine;
+    /** Match the current situation against proven success clusters. Returns the
+     * closest success cluster whose situation centroid clears the threshold, so
+     * the model can reference a proven strategy even when the action itself is
+     * novel.
+     * @param situation - the current situation text.
+     * @returns the matched success reference, or null.
+     */
+    private matchSuccessReference;
     /** Novel branch: scratchpad lookup or creation, conservative calibration. */
     private predictNovel;
     /** Familiar branch: five-layer calibration over the top-K samples. */

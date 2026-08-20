@@ -1,10 +1,11 @@
 /**
  * Prediction-error-driven dynamic cognition (DCA-PED) as a harness plugin:
  * SAR experience memory, a hot-loop online predictor with OOD detection and
- * five-layer confidence calibration, a temp-strategy scratchpad, and a
- * cold-loop taxonomy rebuild gated by sandbox backtesting. The plugin exposes
- * five model-facing tools, the `ctx.cognitivePipeline` service, and a dynamic
- * `cognition:taxonomy` system-prompt section.
+ * five-layer confidence calibration, a temp-strategy scratchpad, simulated
+ * experience generation, and a cold-loop taxonomy rebuild gated by sandbox
+ * backtesting. The plugin exposes six model-facing tools, the
+ * `ctx.cognitivePipeline` service, and a dynamic `cognition:taxonomy`
+ * system-prompt section.
  *
  * @module @deepseek-ai/dsh-cognitive-pipeline
  */
@@ -24,7 +25,8 @@ export * from './vectorizer.ts';
  * Mount the pipeline: construct the service (its `Service` base registers
  * `ctx.cognitivePipeline` on this fiber's context), wait for the store, then
  * register the dynamic taxonomy prompt section and (unless disabled) the
- * model tools.
+ * model tools. When `autoAccumulate` is enabled, also listen for completed
+ * turns and run each through the accumulation gate.
  * @param ctx - plugin context carrying llm/tools/systemPrompt.
  * @param config - pipeline configuration; every field optional.
  */

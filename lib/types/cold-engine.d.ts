@@ -15,11 +15,16 @@ export interface ColdEngineConfig {
     readonly decayLambda: number;
     readonly minDecayWeight: number;
     readonly predictionErrorThreshold: number;
+    readonly successUtilityThreshold: number;
     readonly maxSampleRatio: number;
     readonly evidenceMinCount: number;
     readonly evidenceMaxDistance: number;
     readonly sandboxImprovement: number;
     readonly validationRatio: number;
+    /** Minimum labeled (non-neutral) validation samples before a rebuild may be accepted. */
+    readonly minValidationCount: number;
+    /** Extra reconstruct draws when one stochastic LLM sample yields nothing verified (default 2). */
+    readonly reconstructRetries: number;
     readonly clusterMergeCosine: number;
     readonly clusterMatchCosine: number;
 }
@@ -44,7 +49,16 @@ export declare class ColdEngine {
     runRebuild(scope: 'local' | 'global', sessionId?: GenerateOptions['sessionId'], signal?: AbortSignal): Promise<RebuildResult>;
     /** Short-circuit rejection result. */
     private rejected;
-    /** Decay-weighted, error-preferring sample selection (≤ maxSampleRatio). */
+    /** Short-circuit deferral result: insufficient labeled validation samples. */
+    private deferred;
+    /** Decay-weighted, error-preferring sample selection (≤ maxSampleRatio).
+     * A candidate joins when it is errorful (high prediction error or any
+     * accumulated error) OR carries a clearly successful utility score — so the
+     * cold loop learns from proven successes, not only from failures. Pipeline-own
+     * meta experiences with a non-neutral utility also join (their error signal
+     * has no user-feedback channel), so the cold loop can learn about the
+     * pipeline's own failure modes (e.g. retrieval-routing ambiguity).
+     */
     private sample;
     /**
      * Keep at most maxSampleRatio of the total population, error-first, with a
@@ -58,9 +72,21 @@ export declare class ColdEngine {
     private composeGroupSummary;
     /** Build normalized views for the stored cluster table. */
     private clusterViews;
-    /** Predict 0/1 positivity for each validation experience under a taxonomy. */
+    /** Predict the continuous material-gain label (normalized to [0,1]) for each
+     * validation experience under a taxonomy. The prediction is the mean
+     * material gain of the nearest cluster; unmatched experiences fall back to
+     * the training base-rate gain. This aligns the acceptance metric with the
+     * pipeline's first-principle error `|calibrated − observed|` — it measures
+     * whether the taxonomy predicts utility, not just which polarity bucket an
+     * experience lands in.
+     */
     private predictionsFor;
-    /** Mean absolute error of a taxonomy over the validation slice. */
+    /** Mean absolute error of a taxonomy over the validation slice, on the
+     * continuous material-gain axis. Every experience with a recorded gain
+     * participates (resolved experiences carry a real label after the
+     * feedback-backfill), so "predicted wrong but quality known" samples are no
+     * longer excluded from the acceptance judgment.
+     */
     private evaluateViews;
     /** Apply the accepted taxonomy: new clusters, assignments, summary, rules. */
     private writeBack;

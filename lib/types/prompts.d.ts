@@ -42,12 +42,26 @@ export declare function frameCalibrationInput(situation: string, action: string,
     expId: string;
     actionKeywords: string;
     utility: string;
+    meta?: boolean;
 }[]): string;
 /** Frame template-4 input with the sampled experiences.
  * @param samples - the sampled train experiences.
  * @returns the user message body.
  */
 export declare function frameReconstructInput(samples: readonly Experience[]): string;
+/** Template 5: the accumulation gate — judge whether a completed turn is worth
+ * becoming an experience, and extract the SAR triplet when it is. */
+export declare const ACCUMULATE_SYSTEM_PROMPT: string;
+/** Frame template-5 input with the completed episode and similar history. */
+export declare function frameAccumulateInput(episode: {
+    situation: string;
+    action: string;
+    outcome: string;
+}, similar: readonly {
+    expId: string;
+    text: string;
+    similarity: number;
+}[]): string;
 /** 附录B: the dynamic cognition prefix injected into the hot-loop system prompt.
  * @param taxonomy - the current taxonomy, or null before the first rebuild.
  * @returns the prefix text.

@@ -60,6 +60,30 @@ export declare class CognitiveStore {
      * @returns the updated experience.
      */
     updateExperience(expId: string, patch: Partial<Experience>): Experience;
+    /**
+     * Fold one real-feedback evidence weight into a simulated experience's
+     * verification state (the evidence-replacement model): a single decisive
+     * weight fast-tracks to provisional, cumulative evidence upgrades to
+     * verified, and a contradictory provisional feedback rolls back. Ordinary
+     * experiences are verified by construction and unaffected.
+     * @param expId - the experience id.
+     * @param weight - the feedback evidence weight in [0, 1].
+     * @param contradictory - whether the feedback contradicts the simulation.
+     * @param fastTrackThreshold - weight at/above which one feedback fast-tracks.
+     * @param permanentThreshold - cumulative evidence needed for permanent verified.
+     * @returns the updated experience.
+     */
+    applyFeedbackEvidence(expId: string, weight: number, contradictory: boolean, fastTrackThreshold: number, permanentThreshold: number): Experience;
+    /**
+     * Expire simulated experiences that never earned real feedback within the
+     * fallback TTL. This is the backstop of the evidence-replacement model:
+     * verification and density are primary, the timeout guards the
+     * never-verified corner.
+     * @param now - the reference timestamp.
+     * @param ttlMs - the fallback TTL for unverified simulated experiences.
+     * @returns the expIds removed.
+     */
+    expireUnverifiedSimulated(now: number, ttlMs: number): string[];
     /** Store one prediction and enqueue its persistence.
      * @param prediction - the prediction to add.
      */
@@ -75,13 +99,17 @@ export declare class CognitiveStore {
     predictionsSnapshot(): readonly Prediction[];
     /**
      * Resolve one prediction with its actual outcome, propagating the absolute
-     * prediction error to the bound experience's cumulative error.
+     * prediction error to the bound experience's cumulative error. When the
+     * feedback carries a result-quality label, it is folded back into the bound
+     * experience's utility so "predicted wrong but quality known" experiences
+     * carry a real tag instead of staying neutral.
      * @param predictionId - the prediction to resolve.
      * @param actualOutcome - the observed outcome text.
      * @param predictionError - absolute error in [0, 1].
+     * @param outcomeQuality - optional result quality 0-10 to fold into the bound experience.
      * @returns the resolved prediction.
      */
-    resolvePrediction(predictionId: string, actualOutcome: string, predictionError: number): Prediction;
+    resolvePrediction(predictionId: string, actualOutcome: string, predictionError: number, outcomeQuality?: number): Prediction;
     /** Read one scratchpad strategy by signature hash.
      * @param signatureHash - the strategy key.
      * @returns the strategy, or undefined.
@@ -162,5 +190,12 @@ export declare class CognitiveStore {
      * @returns `pred_<n>`.
      */
     nextPredictionId(): string;
+    /** Derive a normalized cluster view when the on-disk row predates the new
+     * polarity / situationCentroid fields: polarity from the expected utility
+     * range, centroid from the supporting experiences' situations.
+     * @param raw - the loaded, still-untrusted cluster row.
+     * @returns the cluster with both new fields present.
+     */
+    private normalizeCluster;
 }
 //# sourceMappingURL=store.d.ts.map

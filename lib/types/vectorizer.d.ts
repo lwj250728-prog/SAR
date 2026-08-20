@@ -23,6 +23,29 @@ export declare function utilityScore(utility: OutcomeUtility): number;
  * @returns true when the composite score is positive.
  */
 export declare function isPositiveOutcome(utility: OutcomeUtility): boolean;
+/** Tri-state polarity of an outcome on the composite utility axis. */
+export type OutcomePolarity = 'positive' | 'neutral' | 'negative';
+/** Failure-symptom markers that make an experience recallable by its signature. */
+export declare const SYMPTOM_MARKERS: string[];
+/**
+ * Fraction of the query's symptom markers that appear in one text. The
+ * hashed bag-of-words vectors dilute short symptom queries against long
+ * situations, so this exact-substring overlap is the complementary recall
+ * channel: "测试挂起" hits an experience whose situation literally contains
+ * 挂起 even when the vector cosine is low.
+ * @param query - the query text (task summary, situation, etc.).
+ * @param text - the candidate experience text.
+ * @returns the matched-marker ratio in [0, 1].
+ */
+export declare function symptomOverlap(query: string, text: string): number;
+/**
+ * Classify an outcome by composite score sign. A zero composite score (for
+ * example the neutral 5/5/5 extraction, or a gain that exactly cancels its
+ * cost) carries no net signal and must not be counted as a failure.
+ * @param utility - the outcome utility.
+ * @returns the polarity.
+ */
+export declare function outcomePolarity(utility: OutcomeUtility): OutcomePolarity;
 /** FNV-1a 32-bit hash, a stable deterministic token hash.
  * @param token - the token to hash.
  * @returns an unsigned 32-bit hash.
