@@ -10,8 +10,10 @@
  * @module @deepseek-ai/dsh-cognitive-pipeline
  */
 import type { Context } from '@deepseek-ai/cordis';
+import type { Session, SessionEvent } from '@deepseek-ai/dsh-session';
 import { CognitivePipelineService, Config } from './service.ts';
 import type { CognitivePipelineConfig } from './service.ts';
+import type { TurnEpisode } from './types.ts';
 /** Stable Cordis plugin name. */
 export declare const name = "cognitive-pipeline";
 /** Services required before the pipeline can mount. */
@@ -21,6 +23,15 @@ export { CognitivePipelineService, Config };
 export type { CognitivePipelineConfig } from './service.ts';
 export * from './types.ts';
 export * from './vectorizer.ts';
+/** Reconstruct one completed turn into candidate accumulation material.
+ * Reads the turn's events back from the session ledger: the genuine user
+ * request (source kind 'user') becomes the situation, tool calls become the
+ * action, the final assistant text and the end reason become the outcome.
+ * @param session - the session whose ledger holds the turn's events.
+ * @param endEvent - the turn/end event that closes the turn.
+ * @returns the reconstructed episode.
+ */
+export declare function reconstructTurn(session: Session, endEvent: SessionEvent<'turn/end'>): TurnEpisode;
 /**
  * Mount the pipeline: construct the service (its `Service` base registers
  * `ctx.cognitivePipeline` on this fiber's context), wait for the store, then

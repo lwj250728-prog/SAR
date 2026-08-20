@@ -161,6 +161,28 @@ export declare class CognitivePipelineService extends Service {
         expId: string;
         sar: SarTriplet;
     }>;
+    /** How many similar history hits anchor one reference derivation. */
+    private readonly referenceTopK;
+    /** Minimum dual-axis similarity for a history hit to anchor a reference. */
+    private readonly referenceMinSimilarity;
+    /**
+     * Derive a reference experience from the commonalities of similar history
+     * (cold-start online generalization). Retrieves the top similar experiences
+     * for the query, asks the LLM route to extract their shared pattern, and
+     * writes the result as a retrieval-only simulated candidate that the
+     * evidence-replacement lifecycle verifies against real feedback — the same
+     * lifecycle as {@link simulate}.
+     * @param input - the current situation/action to anchor the derivation.
+     * @param call - optional session/signal context.
+     * @returns the reference experience id and SAR when derived, or null.
+     */
+    deriveReference(input: {
+        situation: string;
+        action: string;
+    }, call?: PipelineCallContext): Promise<{
+        expId: string;
+        sar: SarTriplet;
+    } | null>;
     /** Hot-loop prediction.
      * @param input - the situation/action to predict.
      * @param call - optional session/signal context.

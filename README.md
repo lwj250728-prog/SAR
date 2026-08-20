@@ -1,4 +1,4 @@
-﻿# @deepseek-ai/dsh-cognitive-pipeline
+# @deepseek-ai/dsh-cognitive-pipeline
 
 Prediction-error-driven dynamic cognition (DCA-PED) as a DeepSeek Harness plugin. It gives the agent an evolving experience memory: experiences are encoded as **Situation–Action–Result (SAR)** triplets, retrieved by action similarity, predicted with a **five-layer calibrated confidence interval**, corrected by **real feedback**, and periodically **re-clustered in utility space** — a rebuild only wins when a sandbox backtest proves a ≥15% error cut.
 
@@ -57,7 +57,7 @@ cp -r src <dsh>/packages/cognition/cognitive-pipeline/src
 
 ## Usage
 
-The model gets six tools:
+The model gets seven tools:
 
 - `remember_experience` — encode a raw experience into SAR memory.
 - `predict_outcome` — calibrated prediction with an 80% interval; returns a `prediction_id`.
@@ -65,6 +65,7 @@ The model gets six tools:
 - `rebuild_taxonomy` — run the cold loop (`scope: local | global`).
 - `inspect_memory` — read experiences, clusters, calibration buckets, taxonomy summary.
 - `simulate_experience` — generate a retrieval-only candidate when real testing is costly or impossible.
+- `reference_experience` — generalize the common pattern of the most similar history into a retrieval-only reference candidate (cold-start online generalization); rejected when no similar anchor exists.
 
 The plugin also provides the `ctx.cognitivePipeline` service and the dynamic `cognition:taxonomy` system-prompt section. See [`src/service.ts`](src/service.ts) for the exact service API.
 
@@ -97,7 +98,15 @@ All fields optional; engine defaults follow the design documents.
 | `validationRatio` | `0.2` | Validation slice of the sampled set |
 | `clusterMergeCosine` | `0.4` | Agglomerative merge cosine |
 | `clusterMatchCosine` | `0.3` | Cluster-membership cosine |
-| `emergencyErrorThreshold` | `0.8` | Feedback error triggering a local repair |\n| `successReferenceThreshold` | `0.4` | Situation-cosine threshold for a success-cluster reference |\n| `coverageThreshold` | `0.3` | Situation-centroid cosine below which the taxonomy is uncovered |\n| `retrievalFailureMargin` | `0.1` | Routing margin below which a prediction is SAR-ized as a retrieval failure |\n| `minValidationCount` | `3` | Minimum labeled validation samples before a rebuild may be accepted |\n| `reconstructRetries` | `2` | Extra reconstruct draws when one stochastic LLM sample yields nothing verified |\n| `autoAccumulate` | `false` | Automatically accumulate completed turns judged worth it by the LLM route |
+| `emergencyErrorThreshold` | `0.8` | Feedback error triggering a local repair |
+| `successReferenceThreshold` | `0.4` | Situation-cosine threshold for a success-cluster reference |
+| `coverageThreshold` | `0.3` | Situation-centroid cosine below which the taxonomy is uncovered |
+| `retrievalFailureMargin` | `0.1` | Routing margin below which a prediction is SAR-ized as a retrieval failure |
+| `minValidationCount` | `3` | Minimum labeled validation samples before a rebuild may be accepted |
+| `reconstructRetries` | `2` | Extra reconstruct draws when one stochastic LLM sample yields nothing verified |
+| `autoAccumulate` | `false` | Automatically accumulate completed turns judged worth it by the LLM route |
+| `referenceTopK` | `5` | How many similar history hits anchor one reference derivation |
+| `referenceMinSimilarity` | `0.3` | Minimum dual-axis similarity for a history hit to anchor a reference derivation (below it, or with only simulated hits, the derivation rejects without an LLM call) |
 
 ## Compatibility
 
@@ -113,10 +122,9 @@ The test suite (`tests/`) drives the full loop with scripted LLM adapters and a 
 
 ## Documentation
 
-- [`docs/README.md`](docs/README.md) — index of the DCA-PED design documents
-- [`docs/01-计划书.md`](docs/01-计划书.md) — technical plan (V2.0)
-- [`docs/02-技术报告.md`](docs/02-技术报告.md) — technical report TR-2026-08-11-V2.0
-- [`docs/03-提示词模板库.md`](docs/03-提示词模板库.md) — production prompt library
+- [`docs/README.md`](docs/README.md) — index of the DCA-PED design documents (V2.0 original + V3.0 current)
+- [`docs/v3/`](docs/v3/) — V3.0 design documents (current; post-deployment validation: premise-differentiation emergence, taxonomy-aware retrieval, auto-accumulation)
+- [`docs/v2/`](docs/v2/) — V2.0 design documents (original; 2026-08-11)
 
 ## License
 

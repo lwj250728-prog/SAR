@@ -67,4 +67,16 @@ export declare function frameAccumulateInput(episode: {
  * @returns the prefix text.
  */
 export declare function cognitionPrefix(taxonomy: TaxonomyState | null): string;
+/** Template 6: derive a reference experience from the commonalities of similar
+ * history — an online generalization for cold start. */
+export declare const DERIVE_REFERENCE_SYSTEM_PROMPT: string;
+/** Frame template-6 input with the query and its similar history. */
+export declare function frameDeriveReferenceInput(query: {
+    situation: string;
+    action: string;
+}, similar: readonly {
+    expId: string;
+    text: string;
+    similarity: number;
+}[]): string;
 //# sourceMappingURL=prompts.d.ts.map

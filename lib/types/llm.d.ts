@@ -7,7 +7,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm';
-import type { AccumulationDecision, Experience, OutcomeUtility, SarTriplet } from './types.ts';
+import type { AccumulationDecision, DeriveReferenceDecision, Experience, OutcomeUtility, SarTriplet } from './types.ts';
 /** Explicit provider/model route; both or neither must be set. */
 export interface CognitiveLlmRoute {
     readonly provider?: string | undefined;
@@ -180,5 +180,27 @@ export declare function evaluateAccumulation(ctx: Context, route: CognitiveLlmRo
     text: string;
     similarity: number;
 }[], options: CallOptions): Promise<AccumulationDecision>;
+/** Deterministic template-6 fallback: reject derivation (no route → no reference). */
+export declare function deriveReferenceFallback(): DeriveReferenceDecision;
+/**
+ * Template 6: derive a reference experience from the commonalities of similar
+ * history — an online generalization for cold start. The LLM route extracts
+ * the shared situation/action/outcome/utility pattern; without a route it
+ * deterministically rejects.
+ * @param ctx - plugin context for the LLM call.
+ * @param route - explicit model route.
+ * @param query - the current situation/action to anchor the derivation.
+ * @param similar - the retrieved similar history hits.
+ * @param options - call context (session/signal/maxTokens).
+ * @returns the derivation decision with the reference SAR when derived.
+ */
+export declare function deriveReference(ctx: Context, route: CognitiveLlmRoute, query: {
+    situation: string;
+    action: string;
+}, similar: readonly {
+    expId: string;
+    text: string;
+    similarity: number;
+}[], options: CallOptions): Promise<DeriveReferenceDecision>;
 export {};
 //# sourceMappingURL=llm.d.ts.map

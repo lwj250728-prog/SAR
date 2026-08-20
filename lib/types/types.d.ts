@@ -215,6 +215,18 @@ export interface AccumulationDecision {
         readonly utility: OutcomeUtility;
     } | null;
 }
+/** The LLM route's reference-derivation judgment for one anchor set. */
+export interface DeriveReferenceDecision {
+    /** Whether the similar history yields a common pattern worth generalizing. */
+    readonly shouldDerive: boolean;
+    /** The reference SAR extracted from the commonalities; absent when rejected. */
+    readonly sar: {
+        readonly situation: string;
+        readonly action: string;
+        readonly outcome: string;
+        readonly utility: OutcomeUtility;
+    } | null;
+}
 /** The compressed cognitive-framework summary injected into the hot loop. */
 export interface TaxonomyState {
     readonly version: number;

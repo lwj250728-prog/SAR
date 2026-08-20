@@ -56,13 +56,15 @@ cp -r src <dsh>/packages/cognition/cognitive-pipeline/src
 
 ## 使用
 
-模型获得五个工具：
+模型获得七个工具：
 
 - `remember_experience` — 把原始经历编码进 SAR 记忆。
 - `predict_outcome` — 带 80% 区间的校准预测；返回 `prediction_id`。
 - `report_outcome` — 回填实际结果（可选 `outcome_quality` 0–10）。
 - `rebuild_taxonomy` — 运行冷环路（`scope: local | global`）。
 - `inspect_memory` — 查看经验、簇、校准桶与分类法摘要。
+- `simulate_experience` — 在真实测试成本高或不可行时生成仅检索的模拟候选。
+- `reference_experience` — 把最相似历史经验的共同模式泛化为仅检索的参考候选（冷启动在线泛化）；无相似锚点时拒绝派生。
 
 插件还提供 `ctx.cognitivePipeline` 服务与动态 `cognition:taxonomy` System Prompt 小节。确切的服务 API 见 [`src/service.ts`](src/service.ts)。
 
@@ -96,6 +98,14 @@ cp -r src <dsh>/packages/cognition/cognitive-pipeline/src
 | `clusterMergeCosine` | `0.4` | 凝聚聚类合并余弦 |
 | `clusterMatchCosine` | `0.3` | 簇归属余弦 |
 | `emergencyErrorThreshold` | `0.8` | 触发局部修补的反馈误差 |
+| `successReferenceThreshold` | `0.4` | 返回成功簇参照所需的情境余弦阈值 |
+| `coverageThreshold` | `0.3` | 情境质心余弦低于此值视为分类覆盖缺口 |
+| `retrievalFailureMargin` | `0.1` | 路由余量低于此值即把预测 sar 化为检索失败 |
+| `minValidationCount` | `3` | 验收重建所需的最小带标签验证样本数 |
+| `reconstructRetries` | `2` | 单次随机 LLM 重构抽样无验证簇时的额外抽样次数 |
+| `autoAccumulate` | `false` | 自动沉淀 LLM 路由判断值得的已完成轮次 |
+| `referenceTopK` | `5` | 一次参考派生锚定的相似历史命中数 |
+| `referenceMinSimilarity` | `0.3` | 历史命中作为参考派生锚点所需的最小双轴相似度；低于此值（或仅有模拟命中）时派生不调用 LLM 直接拒绝 |
 
 ## 兼容性
 
@@ -111,10 +121,9 @@ npm run build   # 通过独立 tsconfig 输出到 ./build
 
 ## 文档
 
-- [`docs/README.md`](docs/README.md) — DCA-PED 设计文档索引
-- [`docs/01-计划书.md`](docs/01-计划书.md) — 技术计划书（V2.0）
-- [`docs/02-技术报告.md`](docs/02-技术报告.md) — 技术报告 TR-2026-08-11-V2.0
-- [`docs/03-提示词模板库.md`](docs/03-提示词模板库.md) — 生产级提示词库
+- [`docs/README.md`](docs/README.md) — DCA-PED 设计文档索引（V2.0 原始版 + V3.0 当前版）
+- [`docs/v3/`](docs/v3/) — V3.0 设计文档（当前；真实部署验证后：前提分化自动涌现、检索咨询分类体系、经验自动积累）
+- [`docs/v2/`](docs/v2/) — V2.0 设计文档（原始版；2026-08-11）
 
 ## 许可证
 
