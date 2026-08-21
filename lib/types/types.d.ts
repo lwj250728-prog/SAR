@@ -107,6 +107,11 @@ export interface Prediction {
     readonly isNovel: boolean;
     readonly usedTempStrategy: boolean;
     readonly clusterId: number | null;
+    /** Signature hash of the exploration scratchpad this prediction reused
+     * (`usedTempStrategy`), so feedback can fold the real-world prediction error
+     * back into the exploration entry's ROI ledger. Null for predictions that
+     * did not reuse a scratchpad. */
+    readonly exploredActionHash: string | null;
     /** Epoch milliseconds at prediction. */
     readonly timestamp: number;
     /** Actual outcome text once reported via feedback, null otherwise. */
@@ -145,7 +150,11 @@ export interface TempStrategy {
     readonly sourceExpId: string | null;
 }
 /** One active-exploration attempt (scheme 2): a scratchpad created within the
- * curiosity budget. ROI is tracked from the strategy's terminal state. */
+ * curiosity budget. ROI is tracked from the strategy's terminal state, then
+ * validated by the strategy's real-world reuse: when a later prediction reuses
+ * the scratchpad and receives feedback, the prediction error folds back here
+ * (EWMA), so "did this exploration actually reduce |calibrated − observed|"
+ * is measured on the same ruler as every other prediction. */
 export interface ExploreEntry {
     /** Epoch milliseconds at creation. */
     readonly ts: number;
@@ -157,6 +166,13 @@ export interface ExploreEntry {
     readonly reversible: boolean;
     /** Terminal outcome: 'graduated' | 'expired' | null while active. */
     readonly outcome: 'graduated' | 'expired' | null;
+    /** EWMA of the prediction errors from real-world reuse of this entry's
+     * scratchpad, null until the first feedback on a reused prediction. */
+    readonly validatedError: number | null;
+    /** Whether the exploration paid off in practice: the reused predictions'
+     * EWMA error stayed below {@link exploreValidationErrorThreshold} (true),
+     * crossed it (false), or no reuse feedback exists yet (null). */
+    readonly validated: boolean | null;
 }
 /** Persisted active-exploration state (one per pipeline store). */
 export interface ExplorationState {
@@ -379,6 +395,12 @@ export interface InspectResult {
         readonly total: number;
         readonly graduated: number;
         readonly expired: number;
+        /** Explored strategies that paid off in practice (validated true). */
+        readonly validated: number;
+        /** Explored strategies that failed in practice (validated false). */
+        readonly refuted: number;
+        /** Average EWMA reuse error over validated/refuted entries, null when none. */
+        readonly avgValidationError: number | null;
         /** Autonomous task queue counts by status. */
         readonly tasks: {
             readonly pending: number;

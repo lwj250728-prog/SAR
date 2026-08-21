@@ -177,6 +177,21 @@ export declare class CognitiveStore {
      * @param outcome - 'graduated' or 'expired'.
      */
     resolveExploration(scratchpadHash: string, outcome: 'graduated' | 'expired'): void;
+    /**
+     * Fold one real-world prediction error back into an exploration entry's ROI
+     * ledger. Called on every feedback for a prediction that reused the entry's
+     * scratchpad: the error (|calibrated − observed| of that reuse) updates the
+     * entry's EWMA, and the entry flips validated/refuted once its EWMA clears
+     * or crosses the threshold. This is the feedback chain that closes the
+     * meta-cognition loop — an exploration is not merely graduated (it became a
+     * strategy) but measured (did reusing it actually reduce prediction error).
+     * @param scratchpadHash - the scratchpad the resolved prediction reused.
+     * @param predictionError - the reuse prediction's absolute error in [0, 1].
+     * @param learningRate - EWMA step for the fold.
+     * @param errorThreshold - error ceiling: below validates, at/above refutes.
+     * @returns the updated entry, or undefined when the hash tracks no entry.
+     */
+    validateExploration(scratchpadHash: string, predictionError: number, learningRate: number, errorThreshold: number): ExploreEntry | undefined;
     /** Snapshot of every queued exploration task, insertion order. */
     explorationTasksSnapshot(): readonly ExplorationTask[];
     /** Queue one autonomous exploration task.

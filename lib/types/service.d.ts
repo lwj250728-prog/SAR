@@ -53,6 +53,13 @@ export interface CognitivePipelineConfig {
     /** Whether reversible novel attempts also queue an autonomous exploration
      * task for a background session to execute silently (default false). */
     exploreAutoDispatch?: boolean;
+    /** EWMA step for folding real-world reuse errors into an exploration
+     * entry's validatedError (default 0.3). */
+    exploreValidationLearningRate?: number;
+    /** Prediction-error ceiling below which an explored strategy counts as
+     * validated (paid off in practice); at/above it counts as refuted
+     * (default 0.3, the same threshold as predictionErrorThreshold). */
+    exploreValidationErrorThreshold?: number;
     /** Layer-2 shrinkage alpha (default 50). */
     shrinkageAlpha?: number;
     /** Minimum 80%-interval width (default 0.2). */
@@ -144,6 +151,10 @@ export interface ResolvedCognitivePipelineConfig {
     readonly exploreRiskWords: readonly string[];
     /** Whether reversible novel attempts queue autonomous exploration tasks. */
     readonly exploreAutoDispatch: boolean;
+    /** EWMA step for folding real-world reuse errors into an exploration entry. */
+    readonly exploreValidationLearningRate: number;
+    /** Prediction-error ceiling: below it an explored strategy validates, at/above refutes. */
+    readonly exploreValidationErrorThreshold: number;
 }
 /** Config schema for Loader validation and defaulting. */
 export declare const Config: z<CognitivePipelineConfig>;
@@ -322,7 +333,7 @@ export declare class CognitivePipelineService extends Service {
     /** Record scratchpad feedback and graduate qualifying strategies. */
     private feedbackTempStrategy;
     /** Active-exploration statistics for inspection.
-     * @returns budget window usage and terminal-outcome counts.
+     * @returns budget window usage, terminal-outcome counts, and validation ROI.
      */
     private explorationStats;
 }
