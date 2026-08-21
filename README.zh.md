@@ -6,7 +6,7 @@
 
 ## 功能
 
-- **热环路** — `predict_outcome`：Top-K 检索、OOD 检测（`Top1 相似度 < 0.65`、`Top1-Top3 方差 < 0.1`（模糊）、`Strangeness Index > 1.5`），路由到熟路（五层校准）或陌路（临时工作区，带 `⚠️ 全新现象` 标记）。
+- **热环路** — `predict_outcome`：**多通道融合检索**（语义行动余弦 + 情境结构余弦 + 症状签名重叠 + 失败标记查询下的结果极性优先），通道权重**由反馈误差驱动学习**（`channel_weights.json`，按 `|calibrated − observed|` EWMA），OOD 检测（`Top1 相似度 < 0.65`、`Top1-Top3 方差 < 0.1`（模糊）、`Strangeness Index > 1.5`），低置信路由触发 **LLM 精排**（模板7 剔除不适用 top 命中，有界 `refineMaxDrops` 条），路由到熟路（五层校准）或陌路（临时工作区，带 `⚠️ 全新现象` 标记）。
 - **五层校准** — 频次先验注入、样本量收缩 `P_cal = (k/(k+50))·P_raw + (50/(k+50))·0.5`、最小宽度 80% 置信区间、对抗性风险因素列举、终身校准桶修正。
 - **冷环路** — `rebuild_taxonomy`：时间衰减采样 `W = e^(−λ·Δt)`、在**结果效用向量**上做层次凝聚聚类、LLM 因果锚定（≥3 证据硬约束 + 后端核验）、沙盒回测要求 `Δerr ≤ −0.15` 才原子回写。
 - **反馈闭环** — `report_outcome`：预测误差、校准统计、临时策略晋升、紧急局部修补。
@@ -106,6 +106,9 @@ cp -r src <dsh>/packages/cognition/cognitive-pipeline/src
 | `autoAccumulate` | `false` | 自动沉淀 LLM 路由判断值得的已完成轮次 |
 | `referenceTopK` | `5` | 一次参考派生锚定的相似历史命中数 |
 | `referenceMinSimilarity` | `0.3` | 历史命中作为参考派生锚点所需的最小双轴相似度；低于此值（或仅有模拟命中）时派生不调用 LLM 直接拒绝 |
+| `channelLearningRate` | `0.2` | 反馈驱动的多通道检索权重 EWMA 步长 |
+| `channelErrorThreshold` | `0.3` | 反馈误差低于此值奖励主通道、高于则惩罚 |
+| `refineMaxDrops` | `2` | 单次低置信预测中 LLM 精排的有界剔除上限 |
 
 ## 兼容性
 

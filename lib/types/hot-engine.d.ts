@@ -9,7 +9,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm';
 import type { CognitiveLlmRoute } from './llm.ts';
 import { CognitiveStore } from './store.ts';
-import type { Experience, PredictInput, PredictResult, TempStrategy } from './types.ts';
+import type { Experience, Prediction, PredictInput, PredictResult, TempStrategy } from './types.ts';
 /** Fully resolved engine thresholds (no optional fields). */
 export interface HotEngineConfig {
     readonly topK: number;
@@ -25,13 +25,40 @@ export interface HotEngineConfig {
     /** Routing margin (best-minus-second-best cluster cosine) below which a
      * known-path prediction is treated as a retrieval failure and SAR-ized (default 0.1). */
     readonly retrievalFailureMargin: number;
+    /** EWMA step for the feedback-driven multi-channel retrieval weights (default 0.2). */
+    readonly channelLearningRate: number;
+    /** Feedback error below which the dominant retrieval channel is rewarded,
+     * at/above which it is penalized (default 0.3). */
+    readonly channelErrorThreshold: number;
+    /** Bounded LLM-refine drops: how many inapplicable top candidates may be
+     * removed in one prediction (default 2). */
+    readonly refineMaxDrops: number;
     readonly tempStrategyTtlMs: number;
     readonly tempStrategyMatchThreshold: number;
 }
-/** One ranked history hit. */
+/** The semantic retrieval channel's scoring seam. The default implementation
+ * is the deterministic hash-bag cosine (the all-MiniLM-L6-v2 stand-in); a real
+ * embedding provider can implement the same interface without touching the
+ * fusion logic (see docs/v3 TR §3.7, roadmap R3). */
+export interface SemanticScorer {
+    /** Score how similar a query text is to one experience's action, [0,1]. */
+    score(queryText: string, exp: Experience): number;
+}
+/** Default semantic scorer: hashed bag-of-words cosine over the action text. */
+export declare class HashSemanticScorer implements SemanticScorer {
+    score(queryText: string, exp: Experience): number;
+}
+/** One ranked history hit: `fused` orders the list, `similarity` keeps the
+ * classic semantic cosine semantics for OOD/advice consumers, and `channels`
+ * records the per-channel contributions (w_c · s_c) for feedback learning. */
 interface RankedHit {
     readonly exp: Experience;
+    /** Semantic-channel cosine (the classic similarity; OOD thresholds live here). */
     readonly similarity: number;
+    /** Fused multi-channel score; the ranking axis. */
+    readonly fused: number;
+    /** Per-channel contributions in [semantic, situational, symptom, outcome] order. */
+    readonly channels: readonly number[];
 }
 /**
  * Hot-loop engine. Constructed once per service; `predict` is the online
@@ -42,13 +69,30 @@ export declare class HotEngine {
     private readonly store;
     private readonly config;
     private readonly route;
-    constructor(ctx: Context, store: CognitiveStore, config: HotEngineConfig, route: CognitiveLlmRoute);
-    /** Retrieve the top-K experiences by action-vector cosine similarity.
+    private readonly scorer;
+    constructor(ctx: Context, store: CognitiveStore, config: HotEngineConfig, route: CognitiveLlmRoute, scorer?: SemanticScorer);
+    /** Whether the query text itself carries any failure symptom marker. */
+    private queryHasFailureMarker;
+    /** Per-channel contributions (w_c · s_c) of one experience for one query, in
+     * [semantic, situational, symptom, outcome] order.
+     * @param exp - the candidate experience.
+     * @param queryAction - the query action text.
+     * @param querySituation - the query situation text.
+     * @param situationVector - the precomputed query situation vector (null when the situation is empty).
+     * @param queryText - action + situation, used for symptom/outcome channels.
+     * @param weights - the current learned channel weights.
+     * @returns the four weighted contributions.
+     */
+    private channelContributions;
+    /** Retrieve the top-K experiences by fused multi-channel similarity. The
+     * semantic channel alone decides the classic similarity reported downstream;
+     * the situational/symptom/outcome channels participate only in the ranking.
      * @param action - the proposed action text.
      * @param k - how many hits to return.
+     * @param situation - the situation text, feeding the situational channel.
      * @returns ranked hits, best first.
      */
-    retrieveTopK(action: string, k: number): RankedHit[];
+    retrieveTopK(action: string, k: number, situation?: string): RankedHit[];
     /** Detect OOD signals from the top-K similarity set.
      * @param ranked - the retrieved hits, best first.
      * @returns the strongest signal and the top-1 similarity.
@@ -65,6 +109,32 @@ export declare class HotEngine {
      * @returns the calibrated prediction result.
      */
     predict(input: PredictInput, sessionId?: GenerateOptions['sessionId'], signal?: AbortSignal): Promise<PredictResult>;
+    /**
+     * LLM-refine the fused ranking when the deterministic routing is
+     * low-confidence (thin taxonomy margin or flat-top OOD). The template-7
+     * route judges whether the fused top hit genuinely applies; each rejection
+     * removes that experience and re-ranks the survivors, bounded by
+     * `refineMaxDrops`. Without a route (or when the route keeps the ranking)
+     * the original ranking is returned untouched.
+     * @param input - the query situation/action.
+     * @param ranked - the fused ranking, best first.
+     * @param oodSignal - the OOD signal from the original ranking.
+     * @param taxonomyContext - the query's taxonomy routing.
+     * @param sessionId - optional session identity for the LLM call.
+     * @param signal - optional cancellation.
+     * @returns the refinement note (null when nothing was dropped) and the refined ranking.
+     */
+    private refineRetrieval;
+    /**
+     * Feedback-driven channel-weight learning (第一性原理 |calibrated−observed|):
+     * the channel that dominated the fused top-1 at predict time is rewarded
+     * when the prediction error is small and penalized when it is large, via an
+     * EWMA step clamped to [0.2, 3]. Channels that keep surfacing the
+     * actually-relevant experience grow; channels that pull in noise shrink.
+     * @param prediction - the resolved prediction carrying its fusion record.
+     * @param error - the absolute prediction error |calibrated − observed|.
+     */
+    learnFromFeedback(prediction: Prediction, error: number): void;
     /**
      * Consult the taxonomy during retrieval: match the query situation against
      * every cluster's situation centroid (any polarity), report the routed

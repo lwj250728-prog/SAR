@@ -6,7 +6,7 @@ This package is a self-contained, npm-publishable form of the plugin, shipped to
 
 ## What it does
 
-- **Hot loop** — `predict_outcome`: top-K retrieval, OOD detection (`Top1 相似度 < 0.65`, `Top1-Top3 方差 < 0.1` (ambiguous), `Strangeness Index > 1.5`), routing to the familiar path (five-layer calibration) or the novel path (episodic scratchpad with a `⚠️ 全新现象` marker).
+- **Hot loop** — `predict_outcome`: **multi-channel fused retrieval** (semantic action cosine + situational situation cosine + symptom-signature overlap + outcome-polarity priority for failure-flagged queries) with **feedback-learned channel weights** (`channel_weights.json`, EWMA from `|calibrated − observed|`), OOD detection (`Top1 相似度 < 0.65`, `Top1-Top3 方差 < 0.1` (ambiguous), `Strangeness Index > 1.5`), an **LLM refine pass** on low-confidence routing (template 7 drops inapplicable top hits, bounded by `refineMaxDrops`), and routing to the familiar path (five-layer calibration) or the novel path (episodic scratchpad with a `⚠️ 全新现象` marker).
 - **Five-layer calibration** — frequency-prior prompt injection, sample-size shrinkage `P_cal = (k/(k+50))·P_raw + (50/(k+50))·0.5`, minimum-width 80% confidence interval, adversarial risk-factor listing, lifetime bucket correction.
 - **Cold loop** — `rebuild_taxonomy`: decay-weighted sampling `W = e^(−λ·Δt)`, agglomerative clustering on **outcome utility vectors**, LLM causal anchoring with a hard ≥3-evidence constraint (backend-verified), sandbox backtest requiring `Δerr ≤ −0.15` before atomic write-back.
 - **Feedback loop** — `report_outcome`: prediction error, calibration stats, scratchpad graduation, emergency local repair.
@@ -107,6 +107,9 @@ All fields optional; engine defaults follow the design documents.
 | `autoAccumulate` | `false` | Automatically accumulate completed turns judged worth it by the LLM route |
 | `referenceTopK` | `5` | How many similar history hits anchor one reference derivation |
 | `referenceMinSimilarity` | `0.3` | Minimum dual-axis similarity for a history hit to anchor a reference derivation (below it, or with only simulated hits, the derivation rejects without an LLM call) |
+| `channelLearningRate` | `0.2` | EWMA step for the feedback-driven multi-channel retrieval weights |
+| `channelErrorThreshold` | `0.3` | Feedback error below which the dominant retrieval channel is rewarded, at/above which it is penalized |
+| `refineMaxDrops` | `2` | Bounded LLM-refine drops in one low-confidence prediction |
 
 ## Compatibility
 

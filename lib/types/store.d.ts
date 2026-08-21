@@ -5,7 +5,7 @@
  * persistence pass; `flush()` awaits all pending writes.
  * @module @deepseek-ai/dsh-cognitive-pipeline/store
  */
-import type { CalibrationBucket, Cluster, Experience, Prediction, TaxonomyState, TempStrategy } from './types.ts';
+import type { CalibrationBucket, ChannelWeights, Cluster, Experience, Prediction, TaxonomyState, TempStrategy } from './types.ts';
 /** How many calibration deciles the lifetime stats keep. */
 export declare const CALIBRATION_BUCKETS = 10;
 /**
@@ -23,6 +23,7 @@ export declare class CognitiveStore {
     private tempStrategies;
     private clusterList;
     private calibration;
+    private channelWeights;
     private taxonomyState;
     private nextExpSeq;
     private nextPredictionSeq;
@@ -150,6 +151,14 @@ export declare class CognitiveStore {
      * @returns the bucket accuracy, or null when the bucket has no count.
      */
     empiricalAccuracyFor(probability: number): number | null;
+    /** Snapshot of the learned retrieval channel weights.
+     * @returns a detached weight record.
+     */
+    channelWeightsSnapshot(): ChannelWeights;
+    /** Apply one EWMA step to the learned retrieval channel weights.
+     * @param weights - the new weights; each must already be clamped.
+     */
+    updateChannelWeights(weights: ChannelWeights): void;
     /** Snapshot of the cluster table.
      * @returns clusters with detached fields.
      */

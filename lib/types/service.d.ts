@@ -52,6 +52,12 @@ export interface CognitivePipelineConfig {
     coverageThreshold?: number;
     /** Routing margin below which a known-path prediction is SAR-ized as a retrieval failure (default 0.1). */
     retrievalFailureMargin?: number;
+    /** EWMA step for the feedback-driven multi-channel retrieval weights (default 0.2). */
+    channelLearningRate?: number;
+    /** Feedback error below which the dominant retrieval channel is rewarded, at/above penalized (default 0.3). */
+    channelErrorThreshold?: number;
+    /** Bounded LLM-refine drops in one low-confidence prediction (default 2). */
+    refineMaxDrops?: number;
     /** Cold-loop time-decay lambda per day (default 0.01). */
     decayLambda?: number;
     /** Cold-loop minimum decay weight (default 0.1). */

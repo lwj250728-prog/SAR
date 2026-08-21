@@ -7,7 +7,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm';
-import type { AccumulationDecision, DeriveReferenceDecision, Experience, OutcomeUtility, SarTriplet } from './types.ts';
+import type { AccumulationDecision, DeriveReferenceDecision, Experience, OutcomeUtility, RefineRetrievalDecision, SarTriplet } from './types.ts';
 /** Explicit provider/model route; both or neither must be set. */
 export interface CognitiveLlmRoute {
     readonly provider?: string | undefined;
@@ -202,5 +202,27 @@ export declare function deriveReference(ctx: Context, route: CognitiveLlmRoute, 
     text: string;
     similarity: number;
 }[], options: CallOptions): Promise<DeriveReferenceDecision>;
+/** Deterministic template-7 fallback: keep the fused ranking untouched. */
+export declare function refineRetrievalFallback(): RefineRetrievalDecision;
+/**
+ * Template 7: refine retrieval when the deterministic routing is
+ * low-confidence. The LLM route reads the query and the fused candidates and
+ * judges whether the fused top hit genuinely applies (cosine similarity does
+ * not imply premise transferability); without a route it keeps the ranking.
+ * @param ctx - plugin context for the LLM call.
+ * @param route - explicit model route.
+ * @param query - the current situation/action being predicted.
+ * @param candidates - the fused candidates, best first.
+ * @param options - call context (session/signal/maxTokens).
+ * @returns the refinement decision.
+ */
+export declare function refineRetrieval(ctx: Context, route: CognitiveLlmRoute, query: {
+    situation: string;
+    action: string;
+}, candidates: readonly {
+    expId: string;
+    text: string;
+    similarity: number;
+}[], options: CallOptions): Promise<RefineRetrievalDecision>;
 export {};
 //# sourceMappingURL=llm.d.ts.map

@@ -79,4 +79,17 @@ export declare function frameDeriveReferenceInput(query: {
     text: string;
     similarity: number;
 }[]): string;
+/** Template 7: refine retrieval when the deterministic routing is
+ * low-confidence — the LLM route judges whether the fused top hit genuinely
+ * applies, instead of the hot loop blindly trusting the cosine ranking. */
+export declare const REFINE_RETRIEVAL_SYSTEM_PROMPT: string;
+/** Frame template-7 input with the query and the fused candidates. */
+export declare function frameRefineRetrievalInput(query: {
+    situation: string;
+    action: string;
+}, candidates: readonly {
+    expId: string;
+    text: string;
+    similarity: number;
+}[]): string;
 //# sourceMappingURL=prompts.d.ts.map

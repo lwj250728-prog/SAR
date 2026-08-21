@@ -14,6 +14,20 @@ export interface OutcomeUtility {
     /** Energy / cognitive cost spent (5 = moderate). */
     readonly energyCost: number;
 }
+/** The retrieval channels fused by the hot loop, mirroring the parallel
+ * recall channels of human memory (类比/情境/症状/因果). */
+export type ChannelKey = 'semantic' | 'situational' | 'symptom' | 'outcome';
+/** Per-channel fusion weights, learned from feedback error (default 1 each). */
+export interface ChannelWeights {
+    /** Action-text similarity (the classic cosine axis). */
+    readonly semantic: number;
+    /** Situation-structure similarity (premise differentiation lives here). */
+    readonly situational: number;
+    /** Failure-signature substring overlap. */
+    readonly symptom: number;
+    /** Outcome-polarity priority when the query itself carries failure markers. */
+    readonly outcome: number;
+}
 /** The Situation–Action–Result triplet a raw experience is encoded into. */
 export interface SarTriplet {
     /** Objective situation constraints, without subjective emotion. */
@@ -96,6 +110,13 @@ export interface Prediction {
     readonly predictionError: number | null;
     /** Epoch milliseconds at feedback, null before resolution. */
     readonly resolvedAt: number | null;
+    /** Per-channel contributions (w_c · s_c) of the fused top-1 hit at predict
+     * time, in [semantic, situational, symptom, outcome] order. The feedback
+     * loop uses the dominant channel for error-driven weight learning; absent
+     * for novel predictions with no bound hit. */
+    readonly fusion: {
+        readonly scores: readonly number[];
+    } | null;
 }
 /** Lifecycle state of one scratchpad strategy. */
 export type TempStrategyStatus = 'active' | 'graduated' | 'expired';
@@ -227,6 +248,16 @@ export interface DeriveReferenceDecision {
         readonly utility: OutcomeUtility;
     } | null;
 }
+/** The LLM route's retrieval-refinement judgment (template 7): does the fused
+ * top hit genuinely apply to the current situation/action? */
+export interface RefineRetrievalDecision {
+    /** Whether the top candidate experience genuinely applies. */
+    readonly shouldKeep: boolean;
+    /** The expId the LLM judged inapplicable when rejecting. */
+    readonly rejectedExpId: string | null;
+    /** One-line reason, surfaced in the advice for observability. */
+    readonly reason: string | null;
+}
 /** The compressed cognitive-framework summary injected into the hot loop. */
 export interface TaxonomyState {
     readonly version: number;
@@ -295,6 +326,8 @@ export interface InspectResult {
     readonly activeTempStrategyCount: number;
     readonly calibrationBuckets: readonly CalibrationBucket[];
     readonly taxonomy: TaxonomyState;
+    /** Learned multi-channel retrieval weights (feedback-driven). */
+    readonly channelWeights: ChannelWeights;
     /** Recent resolved predictions, newest first. */
     readonly recentResolved: readonly Prediction[];
 }
