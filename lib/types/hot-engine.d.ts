@@ -49,12 +49,17 @@ export declare class HashSemanticScorer implements SemanticScorer {
     score(queryText: string, exp: Experience): number;
 }
 /** One ranked history hit: `fused` orders the list, `similarity` keeps the
- * classic semantic cosine semantics for OOD/advice consumers, and `channels`
- * records the per-channel contributions (w_c · s_c) for feedback learning. */
+ * classic semantic cosine for OOD/advice consumers, `channelMax` is the
+ * strongest raw channel score (the OOD novelty judgment — any channel strong
+ * enough means history is relevant even when the semantic cosine is diluted),
+ * and `channels` records the per-channel contributions (w_c · s_c) for
+ * feedback learning. */
 interface RankedHit {
     readonly exp: Experience;
-    /** Semantic-channel cosine (the classic similarity; OOD thresholds live here). */
+    /** Semantic-channel cosine (the classic similarity). */
     readonly similarity: number;
+    /** Strongest raw channel score of this hit, in [0, 1]. */
+    readonly channelMax: number;
     /** Fused multi-channel score; the ranking axis. */
     readonly fused: number;
     /** Per-channel contributions in [semantic, situational, symptom, outcome] order. */
@@ -73,29 +78,33 @@ export declare class HotEngine {
     constructor(ctx: Context, store: CognitiveStore, config: HotEngineConfig, route: CognitiveLlmRoute, scorer?: SemanticScorer);
     /** Whether the query text itself carries any failure symptom marker. */
     private queryHasFailureMarker;
-    /** Per-channel contributions (w_c · s_c) of one experience for one query, in
-     * [semantic, situational, symptom, outcome] order.
+    /** Raw per-channel scores (w-independent) of one experience for one query,
+     * in [semantic, situational, symptom, outcome] order.
      * @param exp - the candidate experience.
      * @param queryAction - the query action text.
-     * @param querySituation - the query situation text.
      * @param situationVector - the precomputed query situation vector (null when the situation is empty).
      * @param queryText - action + situation, used for symptom/outcome channels.
-     * @param weights - the current learned channel weights.
-     * @returns the four weighted contributions.
+     * @returns the four raw channel scores.
      */
-    private channelContributions;
+    private channelScores;
     /** Retrieve the top-K experiences by fused multi-channel similarity. The
      * semantic channel alone decides the classic similarity reported downstream;
-     * the situational/symptom/outcome channels participate only in the ranking.
+     * the situational/symptom/outcome channels participate in the ranking, and
+     * `channelMax` (the strongest raw channel score) feeds the OOD novelty
+     * judgment so a strong situational/symptom hit is not drowned by a diluted
+     * semantic cosine.
      * @param action - the proposed action text.
      * @param k - how many hits to return.
      * @param situation - the situation text, feeding the situational channel.
      * @returns ranked hits, best first.
      */
     retrieveTopK(action: string, k: number, situation?: string): RankedHit[];
-    /** Detect OOD signals from the top-K similarity set.
+    /** Detect OOD signals from the top-K similarity set. Novelty is judged on
+     * each hit's strongest channel (`channelMax`): a diluted semantic cosine
+     * must not declare history irrelevant when a situational or symptom channel
+     * strongly matches the same experience.
      * @param ranked - the retrieved hits, best first.
-     * @returns the strongest signal and the top-1 similarity.
+     * @returns the strongest signal and the top-1 strength.
      */
     detectOod(ranked: readonly RankedHit[]): {
         signal: PredictResult['oodSignal'];
