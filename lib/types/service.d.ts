@@ -17,7 +17,7 @@ import { HotEngine } from './hot-engine.ts';
 import type { HotEngineConfig } from './hot-engine.ts';
 import type { CognitiveLlmRoute } from './llm.ts';
 import { CognitiveStore } from './store.ts';
-import type { CalibrationBucket, Cluster, CognitiveLoopStats, ExplorationTask, FeedbackInput, FeedbackResult, InspectResult, LoopExecutionReceipt, LoopExecutionRequest, LoopExecutionSink, MetaLoopSpec, OutcomeUtility, PredictInput, PredictResult, RebuildResult, RememberInput, SarTriplet, SimulateInput, TaxonomyState, TempStrategy, TurnEpisode } from './types.ts';
+import type { AcceptanceCheck, CalibrationBucket, ClaimAudit, Cluster, CognitiveLoopStats, ExplorationTask, FeedbackInput, FeedbackResult, InspectResult, LoopExecutionReceipt, LoopExecutionRequest, LoopExecutionSink, MetaLoopSpec, OutcomeUtility, PredictInput, PredictResult, RebuildResult, RememberInput, SarTriplet, SimulateInput, TaxonomyState, TempStrategy, TurnEpisode } from './types.ts';
 /** Plugin configuration (all fields optional; engine defaults apply). */
 export interface CognitivePipelineConfig {
     /** Store directory; default `<dshHome>/cognitive-pipeline`. */
@@ -95,6 +95,12 @@ export interface CognitivePipelineConfig {
     /** Automatically accumulate completed turns as experiences when the LLM
      * route judges them worth it (default false; pure chat never reaches the gate). */
     autoAccumulate?: boolean;
+    /** Minimum invoked audits before a criterion's deviation rate can flag
+     * rework and record a deviation meta experience (default 3). */
+    acceptanceMinEvidenceCount?: number;
+    /** Violation ratio (violated/invoked) at/above which an applied criterion
+     * flags rework on an audit (default 0.5). */
+    acceptanceDeviationThreshold?: number;
     /** Cold-loop max sample ratio of the population (default 0.15). */
     maxSampleRatio?: number;
     /** Evidence hard-constraint minimum count (default 3). */
@@ -143,6 +149,10 @@ export interface ResolvedCognitivePipelineConfig {
     readonly simulationTtlMs: number;
     /** Whether completed turns are automatically accumulated via the LLM gate. */
     readonly autoAccumulate: boolean;
+    /** Minimum invoked audits before a criterion's deviation rate can flag rework. */
+    readonly acceptanceMinEvidenceCount: number;
+    /** Violation ratio at/above which an applied criterion flags rework. */
+    readonly acceptanceDeviationThreshold: number;
     /** Real-embedding configuration, or null when the seam is disabled. */
     readonly embedding: ResolvedEmbeddingConfig | null;
     /** Active-exploration budget (scheme 2). */
@@ -441,6 +451,71 @@ export declare class CognitivePipelineService extends Service {
      * @returns the 附录B prefix text.
      */
     taxonomyPrefix(): string;
+    /**
+     * Define one acceptance criterion: a reusable verification norm the agent
+     * audits claims against before treating them as settled. The pipeline
+     * records evidence PRESENCE, never evidence truth — it cannot verify its own
+     * claims; truth is adjudicated by the resolved outcome and the user.
+     * @param input - the criterion statement, its trigger marker, and the
+     *   evidence hint that satisfies it.
+     * @returns the new criterion, active with an empty evidence ledger.
+     */
+    defineAcceptanceCheck(input: {
+        criterion: string;
+        trigger: string;
+        evidenceHint: string;
+    }): Promise<AcceptanceCheck>;
+    /**
+     * Audit one claim against the active acceptance criteria. Applicable checks
+     * are those whose trigger marker appears in the claim or its situation; a
+     * claim with no applicable check audits as `not-applicable` and touches no
+     * ledger. An applicable check is satisfied when the claim carries evidence
+     * (non-empty), violated when it does not — presence, not truth. Violated
+     * checks accumulate in the criterion's ledger, and a criterion whose invoked
+     * count clears the evidence minimum while its deviation rate crosses the
+     * threshold flags `reworkNeeded` and records one deviation meta experience
+     * so the cold loop can cluster the pipeline's own acceptance-failure
+     * patterns.
+     * @param input - the claim, its situation, the verification statement (empty
+     *   when the claim is made without evidence), and an optional prediction the
+     *   claim is about.
+     * @returns the recorded audit.
+     */
+    auditClaim(input: {
+        claim: string;
+        situation: string;
+        evidence?: string;
+        predictionId?: string;
+    }): Promise<ClaimAudit>;
+    /**
+     * Rewrite an active criterion's statement/evidence hint, or retire it. A
+     * retired criterion is frozen: its evidence ledger is never reset and audits
+     * no longer apply it. The criterion's invoked/passed/violated/error counts
+     * cannot be edited by any path — criteria are revisable, their track record
+     * is not (the evidence gate of acceptance-criterion change).
+     * @param input - the criterion id, optional new statement/evidence hint, and
+     *   optional retire flag.
+     * @returns the updated criterion.
+     */
+    updateAcceptanceCheck(input: {
+        checkId: string;
+        criterion?: string;
+        evidenceHint?: string;
+        retire?: boolean;
+    }): Promise<AcceptanceCheck>;
+    /** All acceptance criteria (public for inspection).
+     * @returns a detached criterion list, insertion order.
+     */
+    acceptanceChecks(): readonly AcceptanceCheck[];
+    /** Recent claim audits (public for inspection).
+     * @param limit - how many audits, newest first (default 10).
+     * @returns the most recent audits.
+     */
+    claimAudits(limit?: number): readonly ClaimAudit[];
+    /** Acceptance-criteria statistics for inspection.
+     * @returns the verification-norm ledger and rewrite/retire candidates.
+     */
+    private acceptanceStats;
     /** All clusters (public for inspection).
      * @returns a detached cluster list.
      */

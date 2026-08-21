@@ -5,7 +5,7 @@
  * persistence pass; `flush()` awaits all pending writes.
  * @module @deepseek-ai/dsh-cognitive-pipeline/store
  */
-import type { CalibrationBucket, ChannelWeights, Cluster, Experience, ExploreEntry, ExplorationState, ExplorationTask, ExplorationTaskStatus, LoopExecutionReceipt, Prediction, TaxonomyState, TempStrategy } from './types.ts';
+import type { AcceptanceCheck, CalibrationBucket, ChannelWeights, ClaimAudit, Cluster, Experience, ExploreEntry, ExplorationState, ExplorationTask, ExplorationTaskStatus, LoopExecutionReceipt, Prediction, TaxonomyState, TempStrategy } from './types.ts';
 /** How many calibration deciles the lifetime stats keep. */
 export declare const CALIBRATION_BUCKETS = 10;
 /** Local date key of the exploration budget window (`YYYY-MM-DD`). */
@@ -29,11 +29,15 @@ export declare class CognitiveStore {
     private explorationState;
     private explorationTasks;
     private loopExecutions;
+    private acceptance;
+    private claimAudits;
     private taxonomyState;
     private nextExpSeq;
     private nextPredictionSeq;
     private nextClusterSeq;
     private nextTaskSeq;
+    private nextAcceptanceSeq;
+    private nextAuditSeq;
     /**
      * @param root - directory that will hold the JSONL/JSON state files.
      */
@@ -230,6 +234,56 @@ export declare class CognitiveStore {
      * @returns the updated receipt, or undefined when unknown.
      */
     settleLoopExecution(receiptId: string, status: 'executed' | 'failed', outcomeText: string, outcomeQuality: number): LoopExecutionReceipt | undefined;
+    /** Allocate the next acceptance-check id.
+     * @returns `check_<n>`.
+     */
+    nextAcceptanceCheckId(): string;
+    /** Allocate the next claim-audit id.
+     * @returns `audit_<n>`.
+     */
+    nextAuditId(): string;
+    /** Store one acceptance criterion and enqueue its persistence.
+     * @param check - the criterion to add.
+     */
+    addAcceptanceCheck(check: AcceptanceCheck): void;
+    /** Read one acceptance criterion by id.
+     * @param checkId - the criterion id.
+     * @returns the criterion, or undefined.
+     */
+    getAcceptanceCheck(checkId: string): AcceptanceCheck | undefined;
+    /** Snapshot of every acceptance criterion, insertion order. */
+    acceptanceSnapshot(): readonly AcceptanceCheck[];
+    /** Apply a partial patch to one acceptance criterion. The domain freeze
+     * (retired checks are immutable) is enforced by the service layer; the store
+     * applies any patch it receives.
+     * @param checkId - the criterion id.
+     * @param patch - the fields to replace.
+     * @returns the updated criterion.
+     */
+    updateAcceptanceCheck(checkId: string, patch: Partial<AcceptanceCheck>): AcceptanceCheck;
+    /** Record one claim audit and enqueue its persistence.
+     * @param audit - the audit to add (id must be unique).
+     */
+    recordClaimAudit(audit: ClaimAudit): void;
+    /** Snapshot of every claim audit, insertion order. */
+    claimAuditsSnapshot(): readonly ClaimAudit[];
+    /** Fold one audit's verdict into one criterion's evidence ledger: invoked
+     * always increments, and the audit counts as passed (evidence present) or
+     * violated (no evidence).
+     * @param checkId - the applied criterion.
+     * @param passed - whether the claim carried evidence for it.
+     * @returns the updated criterion.
+     */
+    applyAuditStats(checkId: string, passed: boolean): AcceptanceCheck;
+    /** Fold one resolved prediction's |calibrated − observed| error into a
+     * criterion's deviation ledger. Only called for audits that violated the
+     * criterion, so the ledger measures "claims made without verification
+     * correlate with prediction error" on the same ruler as every prediction.
+     * @param checkId - the violated criterion.
+     * @param predictionError - the resolved prediction's absolute error in [0, 1].
+     * @returns the updated criterion.
+     */
+    foldAcceptanceError(checkId: string, predictionError: number): AcceptanceCheck;
     /** Snapshot of the cluster table.
      * @returns clusters with detached fields.
      */

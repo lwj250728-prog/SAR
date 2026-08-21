@@ -1,7 +1,8 @@
 /**
  * Package-owned invariant companion for `@deepseek-ai/dsh-cognitive-pipeline`.
- * Verifies the store's probability and vector-dimension contracts whenever
- * the pipeline service is mounted alongside the invariant registry.
+ * Verifies the store's probability, vector-dimension, and acceptance-ledger
+ * contracts whenever the pipeline service is mounted alongside the invariant
+ * registry.
  * @module @deepseek-ai/dsh-cognitive-pipeline/invariant
  */
 import type { Context } from '@deepseek-ai/cordis';
