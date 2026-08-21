@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "@deepseek-ai/dsh-cognitive-pipeline",
   "version": "0.1.0-rc.6",
   "description": "Prediction-error-driven dynamic cognition (DCA-PED) for DeepSeek Harness: SAR experience memory with hot/cold dual-loop learning, OOD detection, five-layer confidence calibration, a temp-strategy scratchpad, utility-space taxonomy rebuilds, self-cognizant retrieval, and automatic experience accumulation",

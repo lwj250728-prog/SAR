@@ -8,6 +8,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm';
 import type { CognitiveLlmRoute } from './llm.ts';
+import type { EmbeddingScorer } from './embedding.ts';
 import { CognitiveStore } from './store.ts';
 import type { Experience, Prediction, PredictInput, PredictResult, TempStrategy } from './types.ts';
 /** Fully resolved engine thresholds (no optional fields). */
@@ -33,6 +34,14 @@ export interface HotEngineConfig {
     /** Bounded LLM-refine drops: how many inapplicable top candidates may be
      * removed in one prediction (default 2). */
     readonly refineMaxDrops: number;
+    /** Active-exploration daily budget (scheme 2, default 3). */
+    readonly exploreDailyBudget: number;
+    /** Irreversible-action markers that exclude a novel attempt from the
+     * exploration budget (scheme 2 safety gate). */
+    readonly exploreRiskWords: readonly string[];
+    /** Whether a reversible budgeted novel attempt also queues an autonomous
+     * exploration task for a background session (default false). */
+    readonly exploreAutoDispatch: boolean;
     readonly tempStrategyTtlMs: number;
     readonly tempStrategyMatchThreshold: number;
 }
@@ -75,15 +84,23 @@ export declare class HotEngine {
     private readonly config;
     private readonly route;
     private readonly scorer;
-    constructor(ctx: Context, store: CognitiveStore, config: HotEngineConfig, route: CognitiveLlmRoute, scorer?: SemanticScorer);
+    private readonly embedder;
+    constructor(ctx: Context, store: CognitiveStore, config: HotEngineConfig, route: CognitiveLlmRoute, scorer?: SemanticScorer, embedder?: EmbeddingScorer | null);
+    /** Embed the query action once per prediction when the seam is enabled;
+     * null on failure or when disabled (the hash-bag scorer then serves). */
+    private embedQuery;
     /** Whether the query text itself carries any failure symptom marker. */
     private queryHasFailureMarker;
     /** Raw per-channel scores (w-independent) of one experience for one query,
-     * in [semantic, situational, symptom, outcome] order.
+     * in [semantic, situational, symptom, outcome] order. The semantic channel
+     * prefers the real-embedding cosine when the query embedding and the
+     * experience's stored embedding both exist; otherwise it falls back to the
+     * configured scorer (the hash-bag cosine by default).
      * @param exp - the candidate experience.
      * @param queryAction - the query action text.
      * @param situationVector - the precomputed query situation vector (null when the situation is empty).
      * @param queryText - action + situation, used for symptom/outcome channels.
+     * @param queryEmbedding - the real-embedding vector of the query action, or null.
      * @returns the four raw channel scores.
      */
     private channelScores;
@@ -96,9 +113,11 @@ export declare class HotEngine {
      * @param action - the proposed action text.
      * @param k - how many hits to return.
      * @param situation - the situation text, feeding the situational channel.
+     * @param queryEmbedding - the real-embedding vector of the query action
+     * (pre-fetched by the caller), or null to use the hash-bag scorer.
      * @returns ranked hits, best first.
      */
-    retrieveTopK(action: string, k: number, situation?: string): RankedHit[];
+    retrieveTopK(action: string, k: number, situation?: string, queryEmbedding?: readonly number[] | null): RankedHit[];
     /** Detect OOD signals from the top-K similarity set. Novelty is judged on
      * each hit's strongest channel (`channelMax`): a diluted semantic cosine
      * must not declare history irrelevant when a situational or symptom channel

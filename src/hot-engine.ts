@@ -10,6 +10,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import { calibrate, refineRetrieval, reviewOod } from './llm.ts'
 import type { CognitiveLlmRoute } from './llm.ts'
+import type { EmbeddingScorer } from './embedding.ts'
 import { CognitiveStore } from './store.ts'
 import type { ChannelWeights, Experience, Prediction, PredictInput, PredictResult, SuccessReference, TaxonomyContext, TempStrategy } from './types.ts'
 import {
@@ -45,6 +46,14 @@ export interface HotEngineConfig {
   /** Bounded LLM-refine drops: how many inapplicable top candidates may be
    * removed in one prediction (default 2). */
   readonly refineMaxDrops: number
+  /** Active-exploration daily budget (scheme 2, default 3). */
+  readonly exploreDailyBudget: number
+  /** Irreversible-action markers that exclude a novel attempt from the
+   * exploration budget (scheme 2 safety gate). */
+  readonly exploreRiskWords: readonly string[]
+  /** Whether a reversible budgeted novel attempt also queues an autonomous
+   * exploration task for a background session (default false). */
+  readonly exploreAutoDispatch: boolean
   readonly tempStrategyTtlMs: number
   readonly tempStrategyMatchThreshold: number
 }
@@ -127,6 +136,7 @@ export class HotEngine {
   private readonly config: HotEngineConfig
   private readonly route: CognitiveLlmRoute
   private readonly scorer: SemanticScorer
+  private readonly embedder: EmbeddingScorer | null
 
   constructor(
     ctx: Context,
@@ -134,12 +144,21 @@ export class HotEngine {
     config: HotEngineConfig,
     route: CognitiveLlmRoute,
     scorer: SemanticScorer = new HashSemanticScorer(),
+    embedder: EmbeddingScorer | null = null,
   ) {
     this.ctx = ctx
     this.store = store
     this.config = config
     this.route = route
     this.scorer = scorer
+    this.embedder = embedder
+  }
+
+  /** Embed the query action once per prediction when the seam is enabled;
+   * null on failure or when disabled (the hash-bag scorer then serves). */
+  private async embedQuery(action: string): Promise<readonly number[] | null> {
+    if (this.embedder === null) return null
+    return this.embedder.embed(action)
   }
 
   /** Whether the query text itself carries any failure symptom marker. */
@@ -149,11 +168,15 @@ export class HotEngine {
   }
 
   /** Raw per-channel scores (w-independent) of one experience for one query,
-   * in [semantic, situational, symptom, outcome] order.
+   * in [semantic, situational, symptom, outcome] order. The semantic channel
+   * prefers the real-embedding cosine when the query embedding and the
+   * experience's stored embedding both exist; otherwise it falls back to the
+   * configured scorer (the hash-bag cosine by default).
    * @param exp - the candidate experience.
    * @param queryAction - the query action text.
    * @param situationVector - the precomputed query situation vector (null when the situation is empty).
    * @param queryText - action + situation, used for symptom/outcome channels.
+   * @param queryEmbedding - the real-embedding vector of the query action, or null.
    * @returns the four raw channel scores.
    */
   private channelScores(
@@ -161,8 +184,11 @@ export class HotEngine {
     queryAction: string,
     situationVector: number[] | null,
     queryText: string,
+    queryEmbedding: readonly number[] | null,
   ): readonly number[] {
-    const semantic = this.scorer.score(queryAction, exp)
+    const semantic = queryEmbedding !== null && exp.embedding !== undefined
+      ? cosine(queryEmbedding, exp.embedding)
+      : this.scorer.score(queryAction, exp)
     const situational = situationVector === null
       ? 0
       : cosine(situationVector, actionVector(exp.sar.situation, []))
@@ -180,16 +206,18 @@ export class HotEngine {
    * @param action - the proposed action text.
    * @param k - how many hits to return.
    * @param situation - the situation text, feeding the situational channel.
+   * @param queryEmbedding - the real-embedding vector of the query action
+   * (pre-fetched by the caller), or null to use the hash-bag scorer.
    * @returns ranked hits, best first.
    */
-  retrieveTopK(action: string, k: number, situation = ''): RankedHit[] {
+  retrieveTopK(action: string, k: number, situation = '', queryEmbedding: readonly number[] | null = null): RankedHit[] {
     const weights = this.store.channelWeightsSnapshot()
     const situationVector = situation.trim().length > 0 ? actionVector(situation, []) : null
     const queryText = `${action} ${situation}`.trim()
     const keys: readonly (keyof ChannelWeights)[] = ['semantic', 'situational', 'symptom', 'outcome']
     const scored = this.store.experiencesSnapshot()
       .map((exp) => {
-        const raws = this.channelScores(exp, action, situationVector, queryText)
+        const raws = this.channelScores(exp, action, situationVector, queryText, queryEmbedding)
         const channels = raws.map((raw, index) => raw * weights[keys[index] ?? 'semantic'])
         return {
           exp,
@@ -241,7 +269,8 @@ export class HotEngine {
    * @returns the calibrated prediction result.
    */
   async predict(input: PredictInput, sessionId?: GenerateOptions['sessionId'], signal?: AbortSignal): Promise<PredictResult> {
-    const ranked = this.retrieveTopK(input.action, this.config.topK, input.situation)
+    const queryEmbedding = await this.embedQuery(input.action)
+    const ranked = this.retrieveTopK(input.action, this.config.topK, input.situation, queryEmbedding)
     const { signal: oodSignal, top1 } = this.detectOod(ranked)
     const taxonomyContext = this.taxonomyContext(input.situation)
     // Low-confidence deterministic routing triggers the LLM refine pass: the
@@ -458,7 +487,10 @@ export class HotEngine {
     refineNote: string | null,
   ): Promise<PredictResult> {
     const hash = String(signatureHash(input.action))
-    this.store.expireTempStrategies()
+    const expired = this.store.expireTempStrategies()
+    // ROI tracking: strategies that expired never graduated — a failed
+    // exploration attempt.
+    for (const expiredHash of expired) this.store.resolveExploration(expiredHash, 'expired')
     let strategy = this.store.getTempStrategy(hash)
     let usedTempStrategy = false
 
@@ -493,7 +525,34 @@ export class HotEngine {
     if (usedTempStrategy && strategy !== undefined) {
       advice = `⚠️ 全新现象（命中临时试行方案）：${strategy.trialAction}。此为临时试行方案，尚未晋升为主记忆。`
     } else {
-      advice = `⚠️ 全新现象：历史库无匹配（Top1相似度 ${top1.toFixed(3)}，信号 ${oodSignal}）。建议小步试探：${calibration.advicePreview}`
+      // Active exploration (scheme 2): a novel scratchpad creation counts
+      // against the daily curiosity budget ONLY when the action is reversible
+      // (safety gate) and the window has budget left. Irreversible actions
+      // still get a scratchpad but are never flagged as exploration.
+      const reversible = !this.config.exploreRiskWords.some(word => input.action.includes(word))
+      const exploration = this.store.explorationSnapshot()
+      const budgetLeft = exploration.used < this.config.exploreDailyBudget
+      if (reversible && budgetLeft) {
+        this.store.recordExploration({
+          ts: Date.now(),
+          action: input.action,
+          scratchpadHash: hash,
+          reversible: true,
+          outcome: null,
+        })
+        // Autonomous dispatch: queue a background exploration task so a
+        // scheduler session can silently execute the attempt and write the
+        // result back as experience.
+        if (this.config.exploreAutoDispatch) {
+          this.store.addExplorationTask(`探索行动：${input.action}\n情境：${input.situation}`)
+        }
+      }
+      const budgetNote = reversible
+        ? (budgetLeft
+          ? `主动探索（今日预算 ${exploration.used + 1}/${this.config.exploreDailyBudget}）`
+          : '探索预算已耗尽，本次谨慎试探')
+        : '动作不可逆，不纳入主动探索预算'
+      advice = `⚠️ 全新现象：历史库无匹配（Top1相似度 ${top1.toFixed(3)}，信号 ${oodSignal}）。建议小步试探：${calibration.advicePreview} | ${budgetNote}`
       this.store.addTempStrategy({
         signatureHash: hash,
         trialAction: input.action,

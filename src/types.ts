@@ -57,6 +57,11 @@ export interface Experience {
   readonly actionVector: readonly number[]
   /** Deterministic hashed outcome vector (the clustering axis). */
   readonly outcomeVector: readonly number[]
+  /** Real-embedding vector of the action text (roadmap R3), present only
+   * when the embedding seam was enabled at write time. The semantic
+   * retrieval channel prefers it over the hashed action vector; experiences
+   * without one keep the hash fallback. */
+  readonly embedding?: readonly number[]
   /** Current cluster assignment, null until the first cold-loop rebuild. */
   readonly clusterId: number | null
   /** Human strategy label of the assigned cluster. */
@@ -147,6 +152,49 @@ export interface TempStrategy {
   readonly status: TempStrategyStatus
   /** Optional experience that seeded this strategy. */
   readonly sourceExpId: string | null
+}
+
+/** One active-exploration attempt (scheme 2): a scratchpad created within the
+ * curiosity budget. ROI is tracked from the strategy's terminal state. */
+export interface ExploreEntry {
+  /** Epoch milliseconds at creation. */
+  readonly ts: number
+  /** The trial action that was explored. */
+  readonly action: string
+  /** The scratchpad signature hash this entry tracks. */
+  readonly scratchpadHash: string
+  /** Whether the action passed the reversibility safety gate. */
+  readonly reversible: boolean
+  /** Terminal outcome: 'graduated' | 'expired' | null while active. */
+  readonly outcome: 'graduated' | 'expired' | null
+}
+
+/** Persisted active-exploration state (one per pipeline store). */
+export interface ExplorationState {
+  /** Local date key (`YYYY-MM-DD`) of the current budget window. */
+  readonly date: string
+  /** How many entries the window has consumed. */
+  readonly used: number
+  /** Every exploration attempt, newest last. */
+  readonly entries: readonly ExploreEntry[]
+}
+
+/** Lifecycle of one autonomous exploration task (scheme 2 execution). */
+export type ExplorationTaskStatus = 'pending' | 'running' | 'completed' | 'failed'
+
+/** One queued autonomous exploration: a cross-session goal a background
+ * agent session picks up, executes silently, and writes back as experience. */
+export interface ExplorationTask {
+  readonly taskId: string
+  /** The exploration goal the executing session is told to pursue. */
+  readonly goal: string
+  readonly status: ExplorationTaskStatus
+  /** Epoch milliseconds at creation. */
+  readonly createdAt: number
+  /** Epoch milliseconds when a scheduler session picked it up, null while pending. */
+  readonly pickedUpAt: number | null
+  /** The executing session's outcome, null until settled. */
+  readonly result: string | null
 }
 
 /** Lifetime calibration statistics for one confidence decile. */
@@ -352,6 +400,16 @@ export interface InspectResult {
   readonly taxonomy: TaxonomyState
   /** Learned multi-channel retrieval weights (feedback-driven). */
   readonly channelWeights: ChannelWeights
+  /** Active-exploration statistics (scheme 2): budget, usage, ROI. */
+  readonly exploration: {
+    readonly budget: number
+    readonly used: number
+    readonly total: number
+    readonly graduated: number
+    readonly expired: number
+    /** Autonomous task queue counts by status. */
+    readonly tasks: { readonly pending: number; readonly running: number; readonly completed: number; readonly failed: number }
+  }
   /** Recent resolved predictions, newest first. */
   readonly recentResolved: readonly Prediction[]
 }

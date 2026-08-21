@@ -11,11 +11,13 @@ import z from '@deepseek-ai/schemastery';
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm';
 import { ColdEngine } from './cold-engine.ts';
 import type { ColdEngineConfig } from './cold-engine.ts';
+import { EmbeddingScorer } from './embedding.ts';
+import type { ResolvedEmbeddingConfig } from './embedding.ts';
 import { HotEngine } from './hot-engine.ts';
 import type { HotEngineConfig } from './hot-engine.ts';
 import type { CognitiveLlmRoute } from './llm.ts';
 import { CognitiveStore } from './store.ts';
-import type { CalibrationBucket, Cluster, FeedbackInput, FeedbackResult, InspectResult, OutcomeUtility, PredictInput, PredictResult, RebuildResult, RememberInput, SarTriplet, SimulateInput, TaxonomyState, TempStrategy, TurnEpisode } from './types.ts';
+import type { CalibrationBucket, Cluster, ExplorationTask, FeedbackInput, FeedbackResult, InspectResult, OutcomeUtility, PredictInput, PredictResult, RebuildResult, RememberInput, SarTriplet, SimulateInput, TaxonomyState, TempStrategy, TurnEpisode } from './types.ts';
 /** Plugin configuration (all fields optional; engine defaults apply). */
 export interface CognitivePipelineConfig {
     /** Store directory; default `<dshHome>/cognitive-pipeline`. */
@@ -42,6 +44,15 @@ export interface CognitivePipelineConfig {
     tempStrategyPositiveRatio?: number;
     /** Scratchpad fuzzy-match cosine (default 0.5). */
     tempStrategyMatchThreshold?: number;
+    /** Active-exploration daily budget (scheme 2): how many reversible novel
+     * attempts count as exploration per day (default 3). */
+    exploreDailyBudget?: number;
+    /** Words marking an action as irreversible; such actions are never counted
+     * as active exploration (default: 删除/清空/覆盖/发布/推送/rm/移除/迁移/重置/格式化…). */
+    exploreRiskWords?: string[];
+    /** Whether reversible novel attempts also queue an autonomous exploration
+     * task for a background session to execute silently (default false). */
+    exploreAutoDispatch?: boolean;
     /** Layer-2 shrinkage alpha (default 50). */
     shrinkageAlpha?: number;
     /** Minimum 80%-interval width (default 0.2). */
@@ -95,6 +106,20 @@ export interface CognitivePipelineConfig {
     clusterMatchCosine?: number;
     /** Feedback error at/above which an emergency local rebuild fires (default 0.8). */
     emergencyErrorThreshold?: number;
+    /** Real-embedding seam (roadmap R3): when set, the semantic retrieval
+     * channel uses an OpenAI-compatible `/embeddings` endpoint and experiences
+     * store their action embedding at write time; the hash-bag cosine remains
+     * the fallback for queries/experiences without a vector. */
+    embedding?: {
+        /** API base URL (default `https://api.deepseek.com`). */
+        baseUrl?: string;
+        /** Embedding model id (default `deepseek-embedding`). */
+        model?: string;
+        /** Env name holding the API key (default `DEEPSEEK_API_KEY`). */
+        apiKeyEnv?: string;
+        /** Explicit API key, overriding env and credentials. */
+        apiKey?: string;
+    };
 }
 /** Resolved configuration with every optional field materialized. */
 export interface ResolvedCognitivePipelineConfig {
@@ -111,6 +136,14 @@ export interface ResolvedCognitivePipelineConfig {
     readonly simulationTtlMs: number;
     /** Whether completed turns are automatically accumulated via the LLM gate. */
     readonly autoAccumulate: boolean;
+    /** Real-embedding configuration, or null when the seam is disabled. */
+    readonly embedding: ResolvedEmbeddingConfig | null;
+    /** Active-exploration budget (scheme 2). */
+    readonly exploreDailyBudget: number;
+    /** Irreversible-action markers that exclude an attempt from the budget. */
+    readonly exploreRiskWords: readonly string[];
+    /** Whether reversible novel attempts queue autonomous exploration tasks. */
+    readonly exploreAutoDispatch: boolean;
 }
 /** Config schema for Loader validation and defaulting. */
 export declare const Config: z<CognitivePipelineConfig>;
@@ -140,6 +173,8 @@ export declare class CognitivePipelineService extends Service {
     readonly hot: HotEngine;
     /** Cold-loop engine. */
     readonly cold: ColdEngine;
+    /** Real-embedding scorer, or null when the seam is disabled. */
+    readonly embedder: EmbeddingScorer | null;
     private readonly readinessPromise;
     constructor(ctx: Context, config?: CognitivePipelineConfig);
     /** Resolve after the store finished loading (never rejects). */
@@ -155,6 +190,11 @@ export declare class CognitivePipelineService extends Service {
         expId: string;
         sar: SarTriplet;
     }>;
+    /** Embed an action text when the seam is enabled; undefined otherwise.
+     * @param action - the action text to embed.
+     * @returns the vector, or undefined when disabled or the call failed.
+     */
+    private maybeEmbed;
     /**
      * Generate a simulated experience via the LLM route: a retrieval-only,
      * unverified candidate for "if I take this action in this situation, what
@@ -246,6 +286,17 @@ export declare class CognitivePipelineService extends Service {
      * @returns counts, clusters, calibration, taxonomy, and recent resolved predictions.
      */
     inspect(): InspectResult;
+    /** Queue an autonomous exploration task for a background session to execute
+     * silently (scheme 2 cross-session dispatch). The goal text becomes the
+     * executing session's task; the result is written back as an experience.
+     * @param goal - the exploration goal.
+     * @returns the queued task.
+     */
+    explore(goal: string): Promise<ExplorationTask>;
+    /** Snapshot of the queued exploration tasks (public for inspection).
+     * @returns the task list, insertion order.
+     */
+    explorationTasks(): readonly ExplorationTask[];
     /** The dynamic cognition prefix for the system-prompt section.
      * @returns the 附录B prefix text.
      */
@@ -270,6 +321,10 @@ export declare class CognitivePipelineService extends Service {
     private observedOutcome;
     /** Record scratchpad feedback and graduate qualifying strategies. */
     private feedbackTempStrategy;
+    /** Active-exploration statistics for inspection.
+     * @returns budget window usage and terminal-outcome counts.
+     */
+    private explorationStats;
 }
 /** Re-exported utility score for consumers.
  * @param utility - the outcome utility.

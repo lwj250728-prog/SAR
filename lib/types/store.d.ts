@@ -5,9 +5,11 @@
  * persistence pass; `flush()` awaits all pending writes.
  * @module @deepseek-ai/dsh-cognitive-pipeline/store
  */
-import type { CalibrationBucket, ChannelWeights, Cluster, Experience, Prediction, TaxonomyState, TempStrategy } from './types.ts';
+import type { CalibrationBucket, ChannelWeights, Cluster, Experience, ExploreEntry, ExplorationState, ExplorationTask, ExplorationTaskStatus, Prediction, TaxonomyState, TempStrategy } from './types.ts';
 /** How many calibration deciles the lifetime stats keep. */
 export declare const CALIBRATION_BUCKETS = 10;
+/** Local date key of the exploration budget window (`YYYY-MM-DD`). */
+export declare function todayKey(): string;
 /**
  * Index a probability into its decile bucket.
  * @param probability - the probability in [0, 1].
@@ -24,10 +26,13 @@ export declare class CognitiveStore {
     private clusterList;
     private calibration;
     private channelWeights;
+    private explorationState;
+    private explorationTasks;
     private taxonomyState;
     private nextExpSeq;
     private nextPredictionSeq;
     private nextClusterSeq;
+    private nextTaskSeq;
     /**
      * @param root - directory that will hold the JSONL/JSON state files.
      */
@@ -159,6 +164,36 @@ export declare class CognitiveStore {
      * @param weights - the new weights; each must already be clamped.
      */
     updateChannelWeights(weights: ChannelWeights): void;
+    /** Snapshot of the exploration state with the current window's usage.
+     * @returns the exploration state (used counts reset for a stale date).
+     */
+    explorationSnapshot(): ExplorationState;
+    /** Record one exploration attempt within the current budget window.
+     * @param entry - the exploration entry to append.
+     */
+    recordExploration(entry: ExploreEntry): void;
+    /** Mark an exploration entry's scratchpad terminal outcome.
+     * @param scratchpadHash - the tracked scratchpad signature hash.
+     * @param outcome - 'graduated' or 'expired'.
+     */
+    resolveExploration(scratchpadHash: string, outcome: 'graduated' | 'expired'): void;
+    /** Snapshot of every queued exploration task, insertion order. */
+    explorationTasksSnapshot(): readonly ExplorationTask[];
+    /** Queue one autonomous exploration task.
+     * @param goal - the exploration goal a background session will pursue.
+     * @returns the new task.
+     */
+    addExplorationTask(goal: string): ExplorationTask;
+    /** Transition one task's status, recording pickup time and the result.
+     * @param taskId - the task to update.
+     * @param patch - the status/pickedUpAt/result fields to apply.
+     * @returns the updated task, or undefined when unknown.
+     */
+    updateExplorationTask(taskId: string, patch: {
+        status?: ExplorationTaskStatus;
+        pickedUpAt?: number | null;
+        result?: string | null;
+    }): ExplorationTask | undefined;
     /** Snapshot of the cluster table.
      * @returns clusters with detached fields.
      */

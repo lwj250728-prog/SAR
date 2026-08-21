@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { pipelineHarness } from './helpers.ts'
+import { EmbeddingScorer } from '../src/embedding.ts'
 import { HashSemanticScorer, HotEngine } from '../src/hot-engine.ts'
 import type { SemanticScorer } from '../src/hot-engine.ts'
 import type { Experience } from '../src/types.ts'
@@ -404,6 +405,132 @@ describe('hot loop (predict_outcome)', () => {
       // The default hash-bag scorer ranks them identically (same action/situation).
       const defaultHits = new HashSemanticScorer().score('晨跑五公里', store.getExperience('exp_1') as Experience)
       expect(defaultHits).toBeGreaterThan(0.9)
+    } finally {
+      await teardown()
+    }
+  })
+
+  it('uses real embeddings for the semantic channel when both sides carry a vector', async () => {
+    const { ctx, teardown } = await pipelineHarness()
+    try {
+      const store = ctx.cognitivePipeline.store
+      // Identical hash text (the bag-of-words cosine cannot tell them apart),
+      // but the real embeddings place exp_1 far closer to the query.
+      seed(store, 'exp_1', '晨跑五公里', '清晨', { materialGain: 8, emotionalValence: 7, energyCost: 3 })
+      seed(store, 'exp_2', '晨跑五公里', '清晨', { materialGain: 8, emotionalValence: 7, energyCost: 3 })
+      const withEmbedding = (expId: string, vector: number[]): void => {
+        const exp = store.getExperience(expId)
+        if (exp !== undefined) {
+          store.addExperience({ ...exp, embedding: vector })
+        }
+      }
+      withEmbedding('exp_1', [1, 0, 0])
+      withEmbedding('exp_2', [0, 1, 0])
+      const embedder = new EmbeddingScorer(ctx, {
+        baseUrl: 'https://api.deepseek.com',
+        model: 'deepseek-embedding',
+        apiKeyEnv: 'DEEPSEEK_API_KEY',
+      }, { embed: async (text: string) => text.includes('晨跑') ? [1, 0, 0] : [0, 0, 1] })
+      const engine = new HotEngine(
+        ctx, store, ctx.cognitivePipeline.resolved.hot, ctx.cognitivePipeline.resolved.route, undefined, embedder,
+      )
+
+      // With the query embedding, the semantic channel ranks exp_1 first.
+      const embedded = engine.retrieveTopK('晨跑五公里', 1, '清晨', [1, 0, 0])
+      expect(embedded[0]?.exp.expId).toBe('exp_1')
+
+      // Without a query embedding the hash-bag scorer serves (identical texts
+      // tie, so insertion order wins: exp_1).
+      const hashFallback = engine.retrieveTopK('晨跑五公里', 1, '清晨')
+      expect(hashFallback[0]?.exp.expId).toBe('exp_1')
+    } finally {
+      await teardown()
+    }
+  })
+
+  it('counts a reversible novel attempt against the exploration budget and notes it', async () => {
+    const { ctx, teardown } = await pipelineHarness({ exploreDailyBudget: 3 })
+    try {
+      const result = await ctx.cognitivePipeline.predict({ situation: '未知领域', action: '尝试新的搜索策略' })
+      expect(result.isNovel).toBe(true)
+      expect(result.advice).toContain('主动探索')
+      expect(result.advice).toContain('1/3')
+      const state = ctx.cognitivePipeline.store.explorationSnapshot()
+      expect(state.used).toBe(1)
+      expect(state.entries[0]?.reversible).toBe(true)
+      expect(state.entries[0]?.outcome).toBeNull()
+    } finally {
+      await teardown()
+    }
+  })
+
+  it('never counts an irreversible novel attempt as exploration (safety gate)', async () => {
+    const { ctx, teardown } = await pipelineHarness()
+    try {
+      const result = await ctx.cognitivePipeline.predict({ situation: '未知领域', action: '删除生产数据库的全部记录' })
+      expect(result.isNovel).toBe(true)
+      expect(result.advice).toContain('动作不可逆')
+      expect(result.advice).not.toContain('主动探索（今日预算')
+      const state = ctx.cognitivePipeline.store.explorationSnapshot()
+      expect(state.used).toBe(0)
+    } finally {
+      await teardown()
+    }
+  })
+
+  it('stops counting exploration once the daily budget is exhausted', async () => {
+    const { ctx, teardown } = await pipelineHarness({ exploreDailyBudget: 1 })
+    try {
+      const first = await ctx.cognitivePipeline.predict({ situation: '未知领域', action: '尝试新的搜索策略' })
+      expect(first.advice).toContain('1/1')
+      const second = await ctx.cognitivePipeline.predict({ situation: '另一个未知领域', action: '尝试另一种搜索策略' })
+      expect(second.advice).toContain('探索预算已耗尽')
+      expect(ctx.cognitivePipeline.store.explorationSnapshot().used).toBe(1)
+    } finally {
+      await teardown()
+    }
+  })
+
+  it('marks a graduated scratchpad as a successful exploration (ROI)', async () => {
+    const { ctx, teardown } = await pipelineHarness({ exploreDailyBudget: 5, tempStrategyHitThreshold: 2, tempStrategyPositiveRatio: 0.5 })
+    try {
+      await ctx.cognitivePipeline.predict({ situation: '未知领域', action: '尝试新的搜索策略' })
+      expect(ctx.cognitivePipeline.store.explorationSnapshot().entries[0]?.outcome).toBeNull()
+
+      // Hit the same strategy again and feed positive feedback twice.
+      const p1 = await ctx.cognitivePipeline.predict({ situation: '未知领域', action: '尝试新的搜索策略' })
+      await ctx.cognitivePipeline.report({ predictionId: p1.predictionId, actualOutcome: '有效', outcomeQuality: 8 })
+      const p2 = await ctx.cognitivePipeline.predict({ situation: '未知领域', action: '尝试新的搜索策略' })
+      await ctx.cognitivePipeline.report({ predictionId: p2.predictionId, actualOutcome: '有效', outcomeQuality: 8 })
+
+      expect(ctx.cognitivePipeline.store.explorationSnapshot().entries[0]?.outcome).toBe('graduated')
+      const insp = ctx.cognitivePipeline.inspect()
+      expect(insp.exploration.graduated).toBe(1)
+    } finally {
+      await teardown()
+    }
+  })
+
+  it('queues an autonomous exploration task when exploreAutoDispatch is enabled', async () => {
+    const { ctx, teardown } = await pipelineHarness({ exploreDailyBudget: 3, exploreAutoDispatch: true })
+    try {
+      await ctx.cognitivePipeline.predict({ situation: '未知领域', action: '尝试新的搜索策略' })
+      const tasks = ctx.cognitivePipeline.store.explorationTasksSnapshot()
+      expect(tasks.length).toBe(1)
+      expect(tasks[0]?.goal).toContain('尝试新的搜索策略')
+      expect(tasks[0]?.status).toBe('pending')
+      const insp = ctx.cognitivePipeline.inspect()
+      expect(insp.exploration.tasks.pending).toBe(1)
+    } finally {
+      await teardown()
+    }
+  })
+
+  it('does not queue an autonomous task when exploreAutoDispatch is off', async () => {
+    const { ctx, teardown } = await pipelineHarness({ exploreDailyBudget: 3 })
+    try {
+      await ctx.cognitivePipeline.predict({ situation: '未知领域', action: '尝试新的搜索策略' })
+      expect(ctx.cognitivePipeline.store.explorationTasksSnapshot().length).toBe(0)
     } finally {
       await teardown()
     }
