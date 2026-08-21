@@ -470,15 +470,20 @@ export declare class CognitivePipelineService extends Service {
      * are those whose trigger marker appears in the claim or its situation; a
      * claim with no applicable check audits as `not-applicable` and touches no
      * ledger. An applicable check is satisfied when the claim carries evidence
-     * (non-empty), violated when it does not — presence, not truth. Violated
-     * checks accumulate in the criterion's ledger, and a criterion whose invoked
-     * count clears the evidence minimum while its deviation rate crosses the
-     * threshold flags `reworkNeeded` and records one deviation meta experience
-     * so the cold loop can cluster the pipeline's own acceptance-failure
-     * patterns.
+     * (non-empty), violated when it does not — presence, not truth. When the
+     * claim carries a `logEvidence` anchor, the session ledger decides instead:
+     * a matched anchor satisfies, a missing or mismatched anchor violates
+     * regardless of self-reported evidence — the log is the non-self-referential
+     * witness, so a claim that anchors to the ledger cannot be validated by
+     * self-report alone. Violated checks accumulate in the criterion's ledger,
+     * and a criterion whose invoked count clears the evidence minimum while its
+     * deviation rate crosses the threshold flags `reworkNeeded` and records one
+     * deviation meta experience so the cold loop can cluster the pipeline's own
+     * acceptance-failure patterns.
      * @param input - the claim, its situation, the verification statement (empty
-     *   when the claim is made without evidence), and an optional prediction the
-     *   claim is about.
+     *   when the claim is made without evidence), an optional prediction the
+     *   claim is about, and an optional mechanically-verified session-log anchor
+     *   (computed by the tool layer from the executing session's ledger).
      * @returns the recorded audit.
      */
     auditClaim(input: {
@@ -486,6 +491,12 @@ export declare class CognitivePipelineService extends Service {
         situation: string;
         evidence?: string;
         predictionId?: string;
+        logEvidence?: {
+            toolName: string;
+            callId: string;
+            expectedSucceeded: boolean;
+            matched: boolean;
+        } | null;
     }): Promise<ClaimAudit>;
     /**
      * Rewrite an active criterion's statement/evidence hint, or retire it. A

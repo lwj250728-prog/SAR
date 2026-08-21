@@ -269,12 +269,15 @@ export declare class CognitiveStore {
     claimAuditsSnapshot(): readonly ClaimAudit[];
     /** Fold one audit's verdict into one criterion's evidence ledger: invoked
      * always increments, and the audit counts as passed (evidence present) or
-     * violated (no evidence).
+     * violated (no evidence). Passes backed by a matched session-log anchor
+     * additionally increment the log-verified counter, so the ledger separates
+     * machine-witnessed satisfaction from self-reported satisfaction.
      * @param checkId - the applied criterion.
      * @param passed - whether the claim carried evidence for it.
+     * @param logVerified - whether that evidence was a matched log anchor.
      * @returns the updated criterion.
      */
-    applyAuditStats(checkId: string, passed: boolean): AcceptanceCheck;
+    applyAuditStats(checkId: string, passed: boolean, logVerified?: boolean): AcceptanceCheck;
     /** Fold one resolved prediction's |calibrated − observed| error into a
      * criterion's deviation ledger. Only called for audits that violated the
      * criterion, so the ledger measures "claims made without verification
