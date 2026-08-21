@@ -11,7 +11,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session';
-import { CognitivePipelineService, Config } from './service.ts';
+import { CognitiveLoopRegistry, CognitivePipelineService, Config } from './service.ts';
 import type { CognitivePipelineConfig } from './service.ts';
 import type { TurnEpisode } from './types.ts';
 /** Stable Cordis plugin name. */
@@ -19,7 +19,7 @@ export declare const name = "cognitive-pipeline";
 /** Services required before the pipeline can mount. */
 export declare const inject: string[];
 /** Re-export the service and config schema for consumers and Loader validation. */
-export { CognitivePipelineService, Config };
+export { CognitiveLoopRegistry, CognitivePipelineService, Config };
 export type { CognitivePipelineConfig } from './service.ts';
 export * from './types.ts';
 export * from './vectorizer.ts';

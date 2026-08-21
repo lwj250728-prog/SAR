@@ -17,7 +17,7 @@ import { HotEngine } from './hot-engine.ts';
 import type { HotEngineConfig } from './hot-engine.ts';
 import type { CognitiveLlmRoute } from './llm.ts';
 import { CognitiveStore } from './store.ts';
-import type { CalibrationBucket, Cluster, ExplorationTask, FeedbackInput, FeedbackResult, InspectResult, OutcomeUtility, PredictInput, PredictResult, RebuildResult, RememberInput, SarTriplet, SimulateInput, TaxonomyState, TempStrategy, TurnEpisode } from './types.ts';
+import type { CalibrationBucket, Cluster, CognitiveLoopStats, ExplorationTask, FeedbackInput, FeedbackResult, InspectResult, MetaLoopSpec, OutcomeUtility, PredictInput, PredictResult, RebuildResult, RememberInput, SarTriplet, SimulateInput, TaxonomyState, TempStrategy, TurnEpisode } from './types.ts';
 /** Plugin configuration (all fields optional; engine defaults apply). */
 export interface CognitivePipelineConfig {
     /** Store directory; default `<dshHome>/cognitive-pipeline`. */
@@ -168,6 +168,41 @@ export interface PipelineCallContext {
     readonly sessionId?: GenerateOptions['sessionId'];
     readonly signal?: AbortSignal;
 }
+/**
+ * Registry of named meta-cognition loops ("造新环路"): each loop is a
+ * special-experience layer over the base SAR memory, exactly like the
+ * `policy:*` decisions the orchestrator learns. Registering a loop gives it a
+ * stable identity whose decisions flow through the SAME predict/report
+ * calibration ruler as every other prediction — the loop's situation carries
+ * a `loop:<name>` prefix, so its decision history forms its own retrievable
+ * layer and inspection can aggregate per-loop error. This is the reusable
+ * abstraction behind the three prior upgrades (policy:* delegation, active
+ * exploration, exploration validation): declare a decision stream, get the
+ * calibrated-意志 loop for free.
+ */
+export declare class CognitiveLoopRegistry {
+    private readonly loops;
+    /**
+     * Register one meta-cognition loop. Re-registering the same name replaces
+     * the description (identity is the name).
+     * @param spec - the loop's identity and description.
+     * @returns the registry, for chaining.
+     */
+    register(spec: MetaLoopSpec): this;
+    /** Whether a loop with this name is registered. */
+    has(name: string): boolean;
+    /** Every registered loop, in registration order. */
+    list(): readonly MetaLoopSpec[];
+    /** Per-loop calibration statistics, aggregated from the prediction log.
+     * @param predictions - the full prediction snapshot.
+     * @returns one stats row per registered loop, in registration order.
+     */
+    stats(predictions: readonly {
+        situation: string;
+        resolvedAt: number | null;
+        predictionError: number | null;
+    }[]): readonly CognitiveLoopStats[];
+}
 declare module '@deepseek-ai/cordis' {
     interface Context {
         cognitivePipeline: CognitivePipelineService;
@@ -186,6 +221,8 @@ export declare class CognitivePipelineService extends Service {
     readonly cold: ColdEngine;
     /** Real-embedding scorer, or null when the seam is disabled. */
     readonly embedder: EmbeddingScorer | null;
+    /** Meta-cognition loop registry (the "造新环路" surface). */
+    readonly loops: CognitiveLoopRegistry;
     private readonly readinessPromise;
     constructor(ctx: Context, config?: CognitivePipelineConfig);
     /** Resolve after the store finished loading (never rejects). */
@@ -308,6 +345,38 @@ export declare class CognitivePipelineService extends Service {
      * @returns the task list, insertion order.
      */
     explorationTasks(): readonly ExplorationTask[];
+    /** Register a meta-cognition loop (declarative "造新环路").
+     * @param spec - the loop's identity and description.
+     * @returns the service, for chaining.
+     */
+    registerLoop(spec: MetaLoopSpec): this;
+    /** Registered meta-cognition loops, in registration order.
+     * @returns the loop specs.
+     */
+    loopList(): readonly MetaLoopSpec[];
+    /**
+     * Run one meta-cognition loop decision through the SAME calibration ruler as
+     * every prediction. The loop's identity prefixes the situation
+     * (`loop:<name> 决策=…`), so the decision's history forms that loop's own
+     * special-experience layer — retrievable, aggregable, and calibrated.
+     * @param name - the registered loop name.
+     * @param decision - what the loop is deciding (becomes the action text).
+     * @param situation - the context the decision is made in.
+     * @param call - optional session/signal context.
+     * @returns the predict result; rejects with INVALID_LOOP_NAME when unregistered.
+     */
+    decideLoop(name: string, decision: string, situation: string, call?: PipelineCallContext): Promise<PredictResult>;
+    /**
+     * Feed the actual outcome of a loop decision back for calibration. Same
+     * report path as ordinary predictions.
+     * @param name - the registered loop name (used for validation only).
+     * @param predictionId - the decision's prediction id.
+     * @param actualOutcome - the observed outcome text.
+     * @param outcomeQuality - the outcome quality 0–10.
+     * @param call - optional session/signal context.
+     * @returns the feedback result.
+     */
+    feedbackLoop(name: string, predictionId: string, actualOutcome: string, outcomeQuality: number, call?: PipelineCallContext): Promise<FeedbackResult>;
     /** The dynamic cognition prefix for the system-prompt section.
      * @returns the 附录B prefix text.
      */
