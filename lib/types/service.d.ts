@@ -17,7 +17,7 @@ import { HotEngine } from './hot-engine.ts';
 import type { HotEngineConfig } from './hot-engine.ts';
 import type { CognitiveLlmRoute } from './llm.ts';
 import { CognitiveStore } from './store.ts';
-import type { CalibrationBucket, Cluster, CognitiveLoopStats, ExplorationTask, FeedbackInput, FeedbackResult, InspectResult, LoopExecutionRequest, LoopExecutionSink, MetaLoopSpec, OutcomeUtility, PredictInput, PredictResult, RebuildResult, RememberInput, SarTriplet, SimulateInput, TaxonomyState, TempStrategy, TurnEpisode } from './types.ts';
+import type { CalibrationBucket, Cluster, CognitiveLoopStats, ExplorationTask, FeedbackInput, FeedbackResult, InspectResult, LoopExecutionReceipt, LoopExecutionRequest, LoopExecutionSink, MetaLoopSpec, OutcomeUtility, PredictInput, PredictResult, RebuildResult, RememberInput, SarTriplet, SimulateInput, TaxonomyState, TempStrategy, TurnEpisode } from './types.ts';
 /** Plugin configuration (all fields optional; engine defaults apply). */
 export interface CognitivePipelineConfig {
     /** Store directory; default `<dshHome>/cognitive-pipeline`. */
@@ -198,24 +198,23 @@ export declare class CognitiveLoopRegistry {
     /**
      * Submit one decision as an execution request to the loop's sinks (only
      * when the decision approved and the loop declared sinks). Each sink
-     * applies its own discipline; a non-null return refuses that sink.
+     * applies its own discipline; a non-null return refuses that sink. Every
+     * attempt — accepted or refused — yields one durable receipt whose id
+     * (`<predictionId>@<target>`) links the decision to its execution outcome.
      * @param request - the decision to submit.
      * @returns one receipt per declared sink, in declaration order.
      */
-    requestExecution(request: LoopExecutionRequest): Promise<readonly {
-        target: string;
-        rejected: boolean;
-        reason: string | null;
-    }[]>;
+    requestExecution(request: LoopExecutionRequest): Promise<readonly LoopExecutionReceipt[]>;
     /** Per-loop calibration statistics, aggregated from the prediction log.
      * @param predictions - the full prediction snapshot.
+     * @param executions - the full loop-execution receipt snapshot.
      * @returns one stats row per registered loop, in registration order.
      */
     stats(predictions: readonly {
         situation: string;
         resolvedAt: number | null;
         predictionError: number | null;
-    }[]): readonly CognitiveLoopStats[];
+    }[], executions: readonly LoopExecutionReceipt[]): readonly CognitiveLoopStats[];
 }
 declare module '@deepseek-ai/cordis' {
     interface Context {
@@ -403,22 +402,40 @@ export declare class CognitivePipelineService extends Service {
     /**
      * Decide through a loop and — when the decision approves and the loop
      * declared execution sinks — submit the decision as an execution request
-     * to each sink. This is the closing of the loop: 意志决策，执行层按纪律受理.
+     * to each sink and persist one durable receipt per sink. This is the
+     * closing of the loop: 意志决策，执行层按纪律受理，回执可结算回流.
      * @param name - the registered loop name.
      * @param decision - what the loop is deciding (becomes the action text).
      * @param situation - the context the decision is made in.
      * @param threshold - approval threshold on calibrated probability (default 0.55).
      * @param call - optional session/signal context.
-     * @returns the decision result plus one execution receipt per declared sink.
+     * @returns the decision result plus one persisted execution receipt per
+     *   declared sink (id `<predictionId>@<target>`), which `settleExecution`
+     *   later resolves with the actual execution outcome.
      */
     decideAndExecute(name: string, decision: string, situation: string, threshold?: number, call?: PipelineCallContext): Promise<{
         decision: PredictResult;
         approved: boolean;
-        executions: readonly {
-            target: string;
-            rejected: boolean;
-            reason: string | null;
-        }[];
+        executions: readonly LoopExecutionReceipt[];
+    }>;
+    /**
+     * Settle one loop-execution receipt with its actual execution outcome. The
+     * receipt must exist and must have been accepted (refused receipts are
+     * terminal by construction — the sink declined, nothing executed). The
+     * outcome feeds back through the SAME report path as every prediction: it
+     * resolves the decision's prediction on the |calibrated − observed| ruler,
+     * so what the execution actually did calibrates the loop that requested it —
+     * 执行结果回流，意志与执行共用同一把尺子.
+     * @param receiptId - the receipt id (`<predictionId>@<target>`).
+     * @param outcomeText - what the execution actually produced.
+     * @param outcomeQuality - the outcome quality 0–10.
+     * @param status - the terminal outcome ('executed' or 'failed'; default executed).
+     * @param call - optional session/signal context.
+     * @returns the settled receipt and the feedback result.
+     */
+    settleExecution(receiptId: string, outcomeText: string, outcomeQuality: number, status?: 'executed' | 'failed', call?: PipelineCallContext): Promise<{
+        receipt: LoopExecutionReceipt;
+        feedback: FeedbackResult;
     }>;
     /** The dynamic cognition prefix for the system-prompt section.
      * @returns the 附录B prefix text.

@@ -5,7 +5,7 @@
  * persistence pass; `flush()` awaits all pending writes.
  * @module @deepseek-ai/dsh-cognitive-pipeline/store
  */
-import type { CalibrationBucket, ChannelWeights, Cluster, Experience, ExploreEntry, ExplorationState, ExplorationTask, ExplorationTaskStatus, Prediction, TaxonomyState, TempStrategy } from './types.ts';
+import type { CalibrationBucket, ChannelWeights, Cluster, Experience, ExploreEntry, ExplorationState, ExplorationTask, ExplorationTaskStatus, LoopExecutionReceipt, Prediction, TaxonomyState, TempStrategy } from './types.ts';
 /** How many calibration deciles the lifetime stats keep. */
 export declare const CALIBRATION_BUCKETS = 10;
 /** Local date key of the exploration budget window (`YYYY-MM-DD`). */
@@ -28,6 +28,7 @@ export declare class CognitiveStore {
     private channelWeights;
     private explorationState;
     private explorationTasks;
+    private loopExecutions;
     private taxonomyState;
     private nextExpSeq;
     private nextPredictionSeq;
@@ -209,6 +210,26 @@ export declare class CognitiveStore {
         pickedUpAt?: number | null;
         result?: string | null;
     }): ExplorationTask | undefined;
+    /** Store one loop-execution receipt and enqueue its persistence.
+     * @param receipt - the receipt to add (id must be unique).
+     */
+    addLoopExecution(receipt: LoopExecutionReceipt): void;
+    /** Read one loop-execution receipt by id.
+     * @param receiptId - the receipt id (`<predictionId>@<target>`).
+     * @returns the receipt, or undefined when unknown.
+     */
+    getLoopExecution(receiptId: string): LoopExecutionReceipt | undefined;
+    /** Snapshot of every loop-execution receipt, insertion order. */
+    loopExecutionsSnapshot(): readonly LoopExecutionReceipt[];
+    /** Mark one accepted receipt's terminal execution outcome. Refused receipts
+     * are terminal by construction and are never settled.
+     * @param receiptId - the receipt to settle.
+     * @param status - the terminal outcome ('executed' or 'failed').
+     * @param outcomeText - what the execution actually produced.
+     * @param outcomeQuality - the outcome quality 0–10.
+     * @returns the updated receipt, or undefined when unknown.
+     */
+    settleLoopExecution(receiptId: string, status: 'executed' | 'failed', outcomeText: string, outcomeQuality: number): LoopExecutionReceipt | undefined;
     /** Snapshot of the cluster table.
      * @returns clusters with detached fields.
      */
