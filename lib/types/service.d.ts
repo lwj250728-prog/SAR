@@ -17,7 +17,7 @@ import { HotEngine } from './hot-engine.ts';
 import type { HotEngineConfig } from './hot-engine.ts';
 import type { CognitiveLlmRoute } from './llm.ts';
 import { CognitiveStore } from './store.ts';
-import type { CalibrationBucket, Cluster, CognitiveLoopStats, ExplorationTask, FeedbackInput, FeedbackResult, InspectResult, MetaLoopSpec, OutcomeUtility, PredictInput, PredictResult, RebuildResult, RememberInput, SarTriplet, SimulateInput, TaxonomyState, TempStrategy, TurnEpisode } from './types.ts';
+import type { CalibrationBucket, Cluster, CognitiveLoopStats, ExplorationTask, FeedbackInput, FeedbackResult, InspectResult, LoopExecutionRequest, LoopExecutionSink, MetaLoopSpec, OutcomeUtility, PredictInput, PredictResult, RebuildResult, RememberInput, SarTriplet, SimulateInput, TaxonomyState, TempStrategy, TurnEpisode } from './types.ts';
 /** Plugin configuration (all fields optional; engine defaults apply). */
 export interface CognitivePipelineConfig {
     /** Store directory; default `<dshHome>/cognitive-pipeline`. */
@@ -185,14 +185,28 @@ export declare class CognitiveLoopRegistry {
     /**
      * Register one meta-cognition loop. Re-registering the same name replaces
      * the description (identity is the name).
-     * @param spec - the loop's identity and description.
+     * @param spec - the loop's identity, description, and optional execution sinks.
      * @returns the registry, for chaining.
      */
     register(spec: MetaLoopSpec): this;
     /** Whether a loop with this name is registered. */
     has(name: string): boolean;
+    /** The registered loop spec, or undefined. */
+    get(name: string): MetaLoopSpec | undefined;
     /** Every registered loop, in registration order. */
     list(): readonly MetaLoopSpec[];
+    /**
+     * Submit one decision as an execution request to the loop's sinks (only
+     * when the decision approved and the loop declared sinks). Each sink
+     * applies its own discipline; a non-null return refuses that sink.
+     * @param request - the decision to submit.
+     * @returns one receipt per declared sink, in declaration order.
+     */
+    requestExecution(request: LoopExecutionRequest): Promise<readonly {
+        target: string;
+        rejected: boolean;
+        reason: string | null;
+    }[]>;
     /** Per-loop calibration statistics, aggregated from the prediction log.
      * @param predictions - the full prediction snapshot.
      * @returns one stats row per registered loop, in registration order.
@@ -355,6 +369,15 @@ export declare class CognitivePipelineService extends Service {
      */
     loopList(): readonly MetaLoopSpec[];
     /**
+     * Build a ready-made execution sink that drives the ACTIVE-EXPLORATION
+     * execution layer under its own discipline (reversibility safety gate +
+     * daily budget). A loop that attaches this sink truly closes the loop: an
+     * approved decision creates a scratchpad and (when configured) queues an
+     * autonomous exploration task — 意志批准，执行层按纪律受理.
+     * @returns a sink targetable as `hot-engine.explore-create`.
+     */
+    createExplorationSink(): LoopExecutionSink;
+    /**
      * Run one meta-cognition loop decision through the SAME calibration ruler as
      * every prediction. The loop's identity prefixes the situation
      * (`loop:<name> 决策=…`), so the decision's history forms that loop's own
@@ -377,6 +400,26 @@ export declare class CognitivePipelineService extends Service {
      * @returns the feedback result.
      */
     feedbackLoop(name: string, predictionId: string, actualOutcome: string, outcomeQuality: number, call?: PipelineCallContext): Promise<FeedbackResult>;
+    /**
+     * Decide through a loop and — when the decision approves and the loop
+     * declared execution sinks — submit the decision as an execution request
+     * to each sink. This is the closing of the loop: 意志决策，执行层按纪律受理.
+     * @param name - the registered loop name.
+     * @param decision - what the loop is deciding (becomes the action text).
+     * @param situation - the context the decision is made in.
+     * @param threshold - approval threshold on calibrated probability (default 0.55).
+     * @param call - optional session/signal context.
+     * @returns the decision result plus one execution receipt per declared sink.
+     */
+    decideAndExecute(name: string, decision: string, situation: string, threshold?: number, call?: PipelineCallContext): Promise<{
+        decision: PredictResult;
+        approved: boolean;
+        executions: readonly {
+            target: string;
+            rejected: boolean;
+            reason: string | null;
+        }[];
+    }>;
     /** The dynamic cognition prefix for the system-prompt section.
      * @returns the 附录B prefix text.
      */
